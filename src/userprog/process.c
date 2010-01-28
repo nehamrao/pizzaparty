@@ -84,21 +84,21 @@ process_execute (const char *file_name)
     while (p >= p_argv_begin && strrchr (delimiters, *p) == NULL) {
       p--;
     }
-    *p_ustack_top = (p + 1);
+    *(int*)p_ustack_top = (p + 1);
     p_ustack_top -= 4;
     argc++;
   }
 
   // argv
-  *p_ustack_top = p_ustack_top + 4;
+  *(int*)p_ustack_top = p_ustack_top + 4;
   p_ustack_top -= 4;
 
   // argc
-  *p_ustack_top = argc;
+  *(int*)p_ustack_top = argc;
   p_ustack_top -= 4;
 
   // fake return address
-  *p_ustack_top = NULL;
+  *(int*)p_ustack_top = NULL;
   p_ustack_top -= 4;
 /* yinfeng ******************************************************************/
 
