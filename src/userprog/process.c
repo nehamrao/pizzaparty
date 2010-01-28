@@ -69,84 +69,6 @@ start_process (void *file_name_)
   if (!success) 
     thread_exit ();
 
-/* yinfeng ******************************************************************/
-  char* p_ustack_top = PHYS_BASE - 1;
-
-  /* scan through fn_copy in reverse order and copy to argv */
-  char* delimiters = " ";
-  char* cur ;
-  char* word_begin;
-  char* word_end;
-  size_t word_len;
-
-  cur = file_name + strlen (file_name);
-  printf ("TEST: %lx, %s, %d\n", cur, file_name, strlen(file_name));
-  while (cur >= file_name) {
-    printf ("TEST1: %lx\n", cur);
-    /* skip delimiters between words */
-    while (cur >= file_name && (strrchr (delimiters, *cur) != NULL || *cur == '\0')) {
-      cur--;
-    }
-    word_end = cur + 1;
-    printf("TEST2: %lx\n", word_end);
-
-    /* skip NON-delimiters in a word */
-    while (cur >= file_name && strrchr (delimiters, *cur) == NULL) {
-      cur--;
-    }
-    word_begin = cur + 1;
-
-    word_len = word_end - word_begin;
-    printf("TEST4: %d\n", word_len);
-
-    printf("TEST5: %lx, %lx, %lx\n", PHYS_BASE, p_ustack_top, p_ustack_top - word_len - 1);
-
-    strlcpy (p_ustack_top - word_len - 1, word_begin, word_len + 1);
-    //*p_ustack_top = '\0';
-    p_ustack_top -= (word_len + 1);
-  }
-
-  char* p_argv_begin = p_ustack_top + 1;
-
-  /* round to nearest multiples of 4 */
-  int count_limit;
-  if (((int)p_ustack_top) % 4 == 3) count_limit = 1; else count_limit = 2;
-  while (count_limit > 0) {
-    if (((int)p_ustack_top) % 4 == 0) count_limit--;
-    *p_ustack_top = 0;
-    p_ustack_top--;
-  }
-
-  /* write argv[argc-1 ... 0] */
-  char *p = PHYS_BASE - 1;
-  int argc = 0;
-  while (p >= p_argv_begin) {
-    p--;
-    while (p >= p_argv_begin && strrchr (delimiters, *p) == NULL) {
-      p--;
-    }
-    *(int*)p_ustack_top = (p + 1);
-    p_ustack_top -= 4;
-    argc++;
-  }
-
-  // argv
-  *(int*)p_ustack_top = p_ustack_top + 4;
-  p_ustack_top -= 4;
-
-  // argc
-  *(int*)p_ustack_top = argc;
-  p_ustack_top -= 4;
-
-  // fake return address
-  *(int*)p_ustack_top = NULL;
-  p_ustack_top -= 4;
-
-  // stack pointer
-  if_.esp = p_ustack_top;
-/* yinfeng ******************************************************************/
-
-
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
      threads/intr-stubs.S).  Because intr_exit takes all of its
@@ -390,6 +312,85 @@ load (const char *file_name, void (**eip) (void), void **esp)
   *eip = (void (*) (void)) ehdr.e_entry;
 
   success = true;
+
+
+/* yinfeng ******************************************************************/
+  char* p_ustack_top = PHYS_BASE - 1;
+
+  /* scan through fn_copy in reverse order and copy to argv */
+  char* delimiters = " ";
+  char* cur ;
+  char* word_begin;
+  char* word_end;
+  size_t word_len;
+
+  cur = file_name + strlen (file_name);
+  printf ("TEST: %lx, %s, %d\n", cur, file_name, strlen(file_name));
+  while (cur >= file_name) {
+    printf ("TEST1: %lx\n", cur);
+    /* skip delimiters between words */
+    while (cur >= file_name && (strrchr (delimiters, *cur) != NULL || *cur == '\0')) {
+      cur--;
+    }
+    word_end = cur + 1;
+    printf("TEST2: %lx\n", word_end);
+
+    /* skip NON-delimiters in a word */
+    while (cur >= file_name && strrchr (delimiters, *cur) == NULL) {
+      cur--;
+    }
+    word_begin = cur + 1;
+
+    word_len = word_end - word_begin;
+    printf("TEST4: %d\n", word_len);
+
+    printf("TEST5: %lx, %lx, %lx\n", PHYS_BASE, p_ustack_top, p_ustack_top - word_len - 1);
+
+    strlcpy (p_ustack_top - word_len - 1, word_begin, word_len + 1);
+    //*p_ustack_top = '\0';
+    p_ustack_top -= (word_len + 1);
+  }
+
+  char* p_argv_begin = p_ustack_top + 1;
+
+  /* round to nearest multiples of 4 */
+  int count_limit;
+  if (((int)p_ustack_top) % 4 == 3) count_limit = 1; else count_limit = 2;
+  while (count_limit > 0) {
+    if (((int)p_ustack_top) % 4 == 0) count_limit--;
+    *p_ustack_top = 0;
+    p_ustack_top--;
+  }
+
+  /* write argv[argc-1 ... 0] */
+  char *p = PHYS_BASE - 1;
+  int argc = 0;
+  while (p >= p_argv_begin) {
+    p--;
+    while (p >= p_argv_begin && strrchr (delimiters, *p) == NULL) {
+      p--;
+    }
+    *(int*)p_ustack_top = (p + 1);
+    p_ustack_top -= 4;
+    argc++;
+  }
+
+  // argv
+  *(int*)p_ustack_top = p_ustack_top + 4;
+  p_ustack_top -= 4;
+
+  // argc
+  *(int*)p_ustack_top = argc;
+  p_ustack_top -= 4;
+
+  // fake return address
+  *(int*)p_ustack_top = NULL;
+  p_ustack_top -= 4;
+
+  // stack pointer
+  *esp = p_ustack_top;
+/* yinfeng ******************************************************************/
+
 
  done:
   /* We arrive here whether the load is successful or not. */
