@@ -62,6 +62,8 @@ start_process (void *file_name_)
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
 
+  printf("TEST-1: %s, %lx\n", file_name, file_name);
+
   /* If load failed, quit. */
   palloc_free_page (file_name);
   if (!success) 
@@ -78,7 +80,7 @@ start_process (void *file_name_)
   size_t word_len;
 
   cur = file_name + strlen (file_name);
-  printf ("TEST: %lx\n", cur);
+  printf ("TEST: %lx, %s, %d\n", cur, file_name, strlen(file_name));
   while (cur >= file_name) {
     printf ("TEST1: %lx\n", cur);
     /* skip delimiters between words */
