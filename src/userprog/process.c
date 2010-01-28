@@ -40,18 +40,21 @@ process_execute (const char *file_name)
 /* yinfeng ******************************************************************/
   char* p_ustack_top = PHYS_BASE - 1;
 
+  /* scan through fn_copy in reverse order and copy to argv */
   char* delimiters = " \t\n";
   char* cur = fn_copy + strlen (fn_copy);
   char* word_begin;
   char* word_end;
   size_t word_len;
   while (cur >= fn_copy) {
-    while (strrchr (delimiters, *cur) != NULL && cur >= fn_copy) {
+    /* skip delimiters between words */
+    while (cur >= fn_copy && strrchr (delimiters, *cur) != NULL) {
       cur--;
     }
     word_end = cur + 1;
 
-    while (strrchr (delimiters, *cur) == NULL && cur >= fn_copy) {
+    /* skip NON-delimiters in a word */
+    while (cur >= fn_copy && strrchr (delimiters, *cur) == NULL) {
       cur--;
     }
     word_begin = cur + 1;
@@ -59,40 +62,44 @@ process_execute (const char *file_name)
     word_len = word_end - word_begin;
     strlcpy (p_ustack_top - word_len, word_begin, word_len);
     *p_ustack_top = '\0';
-    p_ustack_top -= word_len;
+    p_ustack_top -= (word_len + 1);
   }
 
-  char *p_argv_begin = p_ustack_top + 1;
-  p_ustack_top = (char*)(((int)p_ustack_top / 4) * 4);
+  char* p_argv_begin = p_ustack_top + 1;
 
-  // argv[argc]
-  *p_ustack_top = '\0';
-  p_ustack_top--;
+  /* round to nearest multiples of 4 */
+  int count_limit;
+  if (((int)p_ustack_top) % 4 == 3) count_limit = 1; else count_limit = 2;
+  while (count_limit > 0) {
+    if (((int)p_ustack_top) % 4 == 0) count_limit--;
+    *p_ustack_top = 0;
+    p_ustack_top--;
+  }
 
+  /* write argv[argc-1 ... 0] */
   char *p = PHYS_BASE - 1;
   int argc = 0;
   while (p >= p_argv_begin) {
     p--;
-    while (strrchr (delimiters, *p) == NULL && p >= p_argv_begin) {
+    while (p >= p_argv_begin && strrchr (delimiters, *p) == NULL) {
       p--;
     }
-    // argv
     *p_ustack_top = (p + 1);
-    p_ustack_top--;
+    p_ustack_top -= 4;
     argc++;
   }
 
   // argv
-  *p_ustack_top = p_ustack_top + 1;
-  p_ustack_top--;
+  *p_ustack_top = p_ustack_top + 4;
+  p_ustack_top -= 4;
 
   // argc
   *p_ustack_top = argc;
-  p_ustack_top--;
+  p_ustack_top -= 4;
 
   // fake return address
   *p_ustack_top = NULL;
-  p_ustack_top--;
+  p_ustack_top -= 4;
 /* yinfeng ******************************************************************/
 
 
