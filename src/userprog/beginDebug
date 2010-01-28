@@ -1,0 +1,3 @@
+pintos-mkdisk filesys.ksd --filesys-size=2
+pintos -f -q
+pintos -v --gdb -- run args-none
