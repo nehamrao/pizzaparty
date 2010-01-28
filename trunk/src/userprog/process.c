@@ -37,31 +37,70 @@ process_execute (const char *file_name)
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
+
+  /* Create a new thread to execute FILE_NAME. */
+  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  if (tid == TID_ERROR)
+    palloc_free_page (fn_copy);
+
+  return tid;
+}
+
+/* A thread function that loads a user process and starts it
+   running. */
+static void
+start_process (void *file_name_)
+{
+  char *file_name = file_name_;
+  struct intr_frame if_;
+  bool success;
+
+  /* Initialize interrupt frame and load executable. */
+  memset (&if_, 0, sizeof if_);
+  if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
+  if_.cs = SEL_UCSEG;
+  if_.eflags = FLAG_IF | FLAG_MBS;
+  success = load (file_name, &if_.eip, &if_.esp);
+
+  /* If load failed, quit. */
+  palloc_free_page (file_name);
+  if (!success) 
+    thread_exit ();
+
 /* yinfeng ******************************************************************/
   char* p_ustack_top = PHYS_BASE - 1;
 
   /* scan through fn_copy in reverse order and copy to argv */
-  char* delimiters = " \t\n";
-  char* cur = fn_copy + strlen (fn_copy);
+  char* delimiters = " ";
+  char* cur ;
   char* word_begin;
   char* word_end;
   size_t word_len;
-  while (cur >= fn_copy) {
+
+  cur = file_name + strlen (file_name);
+  printf ("TEST: %lx\n", cur);
+  while (cur >= file_name) {
+    printf ("TEST1: %lx\n", cur);
     /* skip delimiters between words */
-    while (cur >= fn_copy && strrchr (delimiters, *cur) != NULL) {
+    while (cur >= file_name && (strrchr (delimiters, *cur) != NULL || *cur == '\0')) {
       cur--;
     }
     word_end = cur + 1;
+    printf("TEST2: %lx\n", word_end);
 
     /* skip NON-delimiters in a word */
-    while (cur >= fn_copy && strrchr (delimiters, *cur) == NULL) {
+    while (cur >= file_name && strrchr (delimiters, *cur) == NULL) {
       cur--;
     }
     word_begin = cur + 1;
 
     word_len = word_end - word_begin;
-    strlcpy (p_ustack_top - word_len, word_begin, word_len);
-    *p_ustack_top = '\0';
+    printf("TEST4: %d\n", word_len);
+
+    printf("TEST5: %lx, %lx, %lx\n", PHYS_BASE, p_ustack_top, p_ustack_top - word_len - 1);
+
+    strlcpy (p_ustack_top - word_len - 1, word_begin, word_len + 1);
+    //*p_ustack_top = '\0';
     p_ustack_top -= (word_len + 1);
   }
 
@@ -100,36 +139,11 @@ process_execute (const char *file_name)
   // fake return address
   *(int*)p_ustack_top = NULL;
   p_ustack_top -= 4;
+
+  // stack pointer
+  if_.esp = p_ustack_top;
 /* yinfeng ******************************************************************/
 
-
-  /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
-  if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
-  return tid;
-}
-
-/* A thread function that loads a user process and starts it
-   running. */
-static void
-start_process (void *file_name_)
-{
-  char *file_name = file_name_;
-  struct intr_frame if_;
-  bool success;
-
-  /* Initialize interrupt frame and load executable. */
-  memset (&if_, 0, sizeof if_);
-  if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
-  if_.cs = SEL_UCSEG;
-  if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load (file_name, &if_.eip, &if_.esp);
-
-  /* If load failed, quit. */
-  palloc_free_page (file_name);
-  if (!success) 
-    thread_exit ();
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
