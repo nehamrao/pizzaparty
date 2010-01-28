@@ -62,7 +62,7 @@ start_process (void *file_name_)
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
 
-  printf("TEST-1: %s, %lx\n", file_name, file_name);
+  //printf("TEST-1: %s, %lx\n", file_name, file_name);
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
@@ -325,15 +325,15 @@ load (const char *file_name, void (**eip) (void), void **esp)
   size_t word_len;
 
   cur = file_name + strlen (file_name);
-  printf ("TEST: %lx, %s, %d\n", cur, file_name, strlen(file_name));
+  //printf ("TEST: %lx, %s, %d\n", cur, file_name, strlen(file_name));
   while (cur >= file_name) {
-    printf ("TEST1: %lx\n", cur);
+    //printf ("TEST1: %lx\n", cur);
     /* skip delimiters between words */
     while (cur >= file_name && (strrchr (delimiters, *cur) != NULL || *cur == '\0')) {
       cur--;
     }
     word_end = cur + 1;
-    printf("TEST2: %lx\n", word_end);
+    //printf("TEST2: %lx\n", word_end);
 
     /* skip NON-delimiters in a word */
     while (cur >= file_name && strrchr (delimiters, *cur) == NULL) {
@@ -342,9 +342,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
     word_begin = cur + 1;
 
     word_len = word_end - word_begin;
-    printf("TEST4: %d\n", word_len);
+    //printf("TEST4: %d\n", word_len);
 
-    printf("TEST5: %lx, %lx, %lx\n", PHYS_BASE, p_ustack_top, p_ustack_top - word_len - 1);
+    //printf("TEST5: %lx, %lx, %lx\n", PHYS_BASE, p_ustack_top, p_ustack_top - word_len - 1);
 
     strlcpy (p_ustack_top - word_len - 1, word_begin, word_len + 1);
     //*p_ustack_top = '\0';
