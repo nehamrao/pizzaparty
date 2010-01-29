@@ -17,6 +17,8 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/pte.h"
+
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -25,6 +27,31 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
+
+/********************************************************************************/
+int checkvaddr(const void * vaddr)
+{
+uint32_t *pt, *pde;
+uint32_t *pd;
+struct thread *t = thread_current ();
+pd = t->pagedir;
+
+  if(is_user_vaddr (vaddr))
+  {
+     pde = pd + pd_no (vaddr);
+     pt = pde_get_pt(*pde); 
+     if (*pt == NULL)
+    {
+       return(0);
+    }
+  }
+ 
+ return(1);
+
+}
+
+/********************************************************************************/
+
 tid_t
 process_execute (const char *file_name) 
 {
@@ -315,7 +342,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
 
 /* yinfeng ******************************************************************/
-  char* p_ustack_top = PHYS_BASE - 1;
+  char* p_ustack_top = *esp-4;
 
   /* scan through fn_copy in reverse order and copy to argv */
   char* delimiters = " ";
@@ -519,7 +546,7 @@ setup_stack (void **esp)
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
-        *esp = PHYS_BASE;
+        *esp = PHYS_BASE-12;
       else
         palloc_free_page (kpage);
     }
