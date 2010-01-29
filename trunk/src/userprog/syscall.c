@@ -104,7 +104,10 @@ halt (void)
 
 void
 exit (int status)
-{}
+{
+  thread_exit ();
+  return;
+}
 
 pid_t
 exec (const char *cmd_line)
@@ -151,7 +154,11 @@ read (int fd, void *buffer, unsigned size)
 int
 write (int fd, const void *buffer, unsigned size)
 {
-  return 0;
+  if (!checkvaddr (buffer))
+    exit (-1); // Need to change
+  ASSERT ( fd == 1);
+  putbuf (buffer, size);
+  return size;
 }
 
 void
