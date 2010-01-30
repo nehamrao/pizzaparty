@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "threads/synch.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -96,11 +97,26 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
+/* yinfeng *******************************************************************/
+    bool child_load_success;
+    struct semaphore sema_child_load;
+    struct list file_list;
+/* yinfeng *******************************************************************/
 #endif
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
+
+/* yinfeng *******************************************************************/
+struct file_info
+  {
+    int fd;                             /* file descriptor */
+    int pos;                            /* position within file */
+    struct file* p_file;                /* pointer to actual file structure */
+    struct list_elem elem;              /* list element */
+  };
+/* yinfeng *******************************************************************/
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
