@@ -3,6 +3,7 @@
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "devices/shutdown.h"
 
 static void syscall_handler (struct intr_frame *);
 
@@ -100,14 +101,15 @@ static uint32_t pop (struct intr_frame *f)
 
 void
 halt (void)
-{}
+{
+  shutdown_power_off ();
+}
 
 void
 exit (int status)
 {
     thread_exit ();
     // More to be added... Returning status.
-    return;
 }
 
 pid_t
