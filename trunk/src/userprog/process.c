@@ -38,13 +38,14 @@ pd = t->pagedir;
 
   if(is_user_vaddr (vaddr))
   {
-     pde = pd + pd_no (vaddr);
-     pt = pde_get_pt(*pde); 
-     if (*pt == NULL)
+    pde = pd + pd_no (vaddr);
+    pt = pde_get_pt(*pde); 
+    if (*pt == NULL)
     {
-       return(0);
+      return 0;
     }
-  }
+  } else 
+    return 0;
  
  return(1);
 
@@ -89,8 +90,6 @@ start_process (void *file_name_)
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
 
-  //printf("TEST-1: %s, %lx\n", file_name, file_name);
-
   /* If load failed, quit. */
   palloc_free_page (file_name);
   if (!success) 
@@ -118,6 +117,11 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
+  /************************************************************************/
+  while (1)
+  {
+  }
+  /************************************************************************/
   return -1;
 }
 
@@ -342,51 +346,53 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
 
 /* yinfeng ******************************************************************/
-  char* p_ustack_top = *esp-4;
+  char* p_ustack_top = *esp;
 
   /* scan through fn_copy in reverse order and copy to argv */
   char* delimiters = " ";
-  char* cur ;
+  char* curr;
   char* word_begin;
   char* word_end;
   size_t word_len;
 
-  cur = file_name + strlen (file_name);
-  //printf ("TEST: %lx, %s, %d\n", cur, file_name, strlen(file_name));
-  while (cur >= file_name) {
-    //printf ("TEST1: %lx\n", cur);
+  curr = file_name + strlen (file_name);
+  printf ("TEST: %lx, %s, %d\n", curr, file_name, strlen(file_name));
+  while (curr >= file_name) {
+    printf ("TEST1: %lx\n", curr);
     /* skip delimiters between words */
-    while (cur >= file_name && (strrchr (delimiters, *cur) != NULL || *cur == '\0')) {
-      cur--;
+    while (curr >= file_name && (strrchr (delimiters, *curr) != NULL || *curr == '\0')) {
+      curr--;
     }
-    word_end = cur + 1;
-    //printf("TEST2: %lx\n", word_end);
+    word_end = curr + 1;
+    printf("TEST2: %lx\n", word_end);
 
     /* skip NON-delimiters in a word */
-    while (cur >= file_name && strrchr (delimiters, *cur) == NULL) {
-      cur--;
+    while (curr >= file_name && strrchr (delimiters, *curr) == NULL) {
+      curr--;
     }
-    word_begin = cur + 1;
+    word_begin = curr + 1;
 
     word_len = word_end - word_begin;
-    //printf("TEST4: %d\n", word_len);
+    printf("TEST4: %d\n", word_len);
 
-    //printf("TEST5: %lx, %lx, %lx\n", PHYS_BASE, p_ustack_top, p_ustack_top - word_len - 1);
+    printf("TEST5: %lx, %lx, %lx\n", PHYS_BASE, p_ustack_top, p_ustack_top - word_len - 1);
 
     strlcpy (p_ustack_top - word_len - 1, word_begin, word_len + 1);
-    //*p_ustack_top = '\0';
+    *(p_ustack_top - 1) = '\0';
     p_ustack_top -= (word_len + 1);
   }
 
-  char* p_argv_begin = p_ustack_top + 1;
+  char* p_argv_begin = p_ustack_top;
+  printf("argv_begin = %lx %c\n", p_argv_begin, *p_argv_begin);
 
   /* round to nearest multiples of 4 */
   int count_limit;
   if (((int)p_ustack_top) % 4 == 3) count_limit = 1; else count_limit = 2;
   while (count_limit > 0) {
-    if (((int)p_ustack_top) % 4 == 0) count_limit--;
-    *p_ustack_top = 0;
     p_ustack_top--;
+    *p_ustack_top = 0;
+    if (((int)p_ustack_top) % 4 == 0) 
+       count_limit--;
   }
 
   /* write argv[argc-1 ... 0] */
@@ -397,25 +403,29 @@ load (const char *file_name, void (**eip) (void), void **esp)
     while (p >= p_argv_begin && strrchr (delimiters, *p) == NULL) {
       p--;
     }
-    *(int*)p_ustack_top = (p + 1);
     p_ustack_top -= 4;
+    *(int*)p_ustack_top = (p + 1);
     argc++;
   }
 
   // argv
-  *(int*)p_ustack_top = p_ustack_top + 4;
   p_ustack_top -= 4;
+  *(int*)p_ustack_top = p_ustack_top + 4;
+  
 
   // argc
-  *(int*)p_ustack_top = argc;
   p_ustack_top -= 4;
+  *(int*)p_ustack_top = argc;
+  
 
   // fake return address
-  *(int*)p_ustack_top = NULL;
   p_ustack_top -= 4;
+  *(int*)p_ustack_top = NULL;
+ 
 
   // stack pointer
   *esp = p_ustack_top;
+  hex_dump (0, PHYS_BASE - 80, 80, 1);
 /* yinfeng ******************************************************************/
 
 
@@ -546,7 +556,7 @@ setup_stack (void **esp)
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
-        *esp = PHYS_BASE-12;
+        *esp = PHYS_BASE;
       else
         palloc_free_page (kpage);
     }

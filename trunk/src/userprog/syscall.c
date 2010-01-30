@@ -69,7 +69,7 @@ syscall_handler (struct intr_frame *f)
         arg1 = pop (f);
         arg2 = pop (f);
         arg3 = pop (f);
-        f->eax = (uint32_t)write((int)arg1, (const void*)arg2, (unsigned)arg3);
+        f->eax = (uint32_t)write ((int)arg1, (const void*)arg2, (unsigned)arg3);
         break;
       case SYS_SEEK:
         arg1 = pop (f);
@@ -105,8 +105,9 @@ halt (void)
 void
 exit (int status)
 {
-  thread_exit ();
-  return;
+    thread_exit ();
+    // More to be added... Returning status.
+    return;
 }
 
 pid_t
@@ -142,6 +143,7 @@ open (const char *file)
 int
 filesize (int fd)
 {
+  
   return 0;
 }
 
@@ -154,11 +156,10 @@ read (int fd, void *buffer, unsigned size)
 int
 write (int fd, const void *buffer, unsigned size)
 {
-  if (!checkvaddr (buffer))
-    exit (-1); // Need to change
   ASSERT ( fd == 1);
   putbuf (buffer, size);
   return size;
+//>>>>>>> .r11
 }
 
 void
