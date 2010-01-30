@@ -8,7 +8,7 @@
 static void syscall_handler (struct intr_frame *);
 
 /* yinfeng ******************************************************************/
-static uint32_t pop (struct intr_frame *f);
+static uint32_t pop (struct intr_frame *f, int offset);
 
 void
 syscall_init (void) 
@@ -20,7 +20,7 @@ static void
 syscall_handler (struct intr_frame *f) 
 {
   /* get syscall number */
-  int syscall_no = (int)(pop (f));
+  int syscall_no = (int)(pop (f, 0));
 
   /* dispatch to individual calls */
   uint32_t arg1;
@@ -32,57 +32,57 @@ syscall_handler (struct intr_frame *f)
         halt ();
         break;
       case SYS_EXIT:
-        arg1 = pop (f);
+        arg1 = pop (f, 4);
         exit ((int)arg1);
         break;
       case SYS_EXEC:
-        arg1 = pop (f);
+        arg1 = pop (f, 4);
         f->eax = (uint32_t)exec ((const char*)arg1);
         break;
       case SYS_WAIT:
-        arg1 = pop (f);
+        arg1 = pop (f, 4);
         f->eax = (uint32_t)wait ((int)arg1);
         break;
       case SYS_CREATE:
-        arg1 = pop (f);
-        arg2 = pop (f);
+        arg1 = pop (f, 4);
+        arg2 = pop (f, 8);
         f->eax = (uint32_t)create ((const char*)arg1, (unsigned)arg2);
         break;
       case SYS_REMOVE:
-        arg1 = pop (f);
+        arg1 = pop (f, 4);
         f->eax = (uint32_t)remove ((const char*)arg1);
         break;
       case SYS_OPEN:
-        arg1 = pop (f);
+        arg1 = pop (f, 4);
         f->eax = (uint32_t)open ((const char*)arg1);
         break;
       case SYS_FILESIZE:
-        arg1 = pop (f);
+        arg1 = pop (f, 4);
         f->eax = (uint32_t)filesize ((int)arg1);
         break;
       case SYS_READ:
-        arg1 = pop (f);
-        arg2 = pop (f);
-        arg3 = pop (f);
+        arg1 = pop (f, 4);
+        arg2 = pop (f, 8);
+        arg3 = pop (f, 12);
         f->eax = (uint32_t)read ((int)arg1, (void*)arg2, (unsigned)arg3);
         break;
       case SYS_WRITE:
-        arg1 = pop (f);
-        arg2 = pop (f);
-        arg3 = pop (f);
+        arg1 = pop (f, 4);
+        arg2 = pop (f, 8);
+        arg3 = pop (f, 12);
         f->eax = (uint32_t)write ((int)arg1, (const void*)arg2, (unsigned)arg3);
         break;
       case SYS_SEEK:
-        arg1 = pop (f);
-        arg2 = pop (f);
+        arg1 = pop (f, 4);
+        arg2 = pop (f, 8);
         seek ((int)arg1, (unsigned)arg2);
         break;
       case SYS_TELL:
-        arg1 = pop (f);
+        arg1 = pop (f, 4);
         f->eax = (uint32_t)tell ((int)arg1);
         break;
       case SYS_CLOSE:
-        arg1 = pop (f);
+        arg1 = pop (f, 4);
         close ((int)arg1);
         break;
       default:
@@ -91,12 +91,9 @@ syscall_handler (struct intr_frame *f)
     }
 }
 
-static uint32_t pop (struct intr_frame *f)
+static uint32_t pop (struct intr_frame *f, int offset)
 {
-  uint32_t result = *(uint32_t *)f->esp;
-  f->esp += 4;
-
-  return result;
+  return *(uint32_t *)(f->esp + offset);
 }
 
 void
@@ -115,7 +112,18 @@ exit (int status)
 pid_t
 exec (const char *cmd_line)
 {
-  return 0;
+  pid_t pid = (pid_t)process_execute (cmd_line);
+
+  struct thread* t = thread_current ();
+  sema_down (&t->sema_child_load);
+  if (t->child_load_success)
+    {
+      return pid;
+    }
+  else
+    {
+      return -1;
+    }
 }
 
 int
