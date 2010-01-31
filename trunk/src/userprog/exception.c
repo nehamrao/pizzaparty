@@ -81,7 +81,7 @@ kill (struct intr_frame *f)
      
   /* The interrupt frame's code segment value tells us where the
      exception originated. */
-  thread_current ()->thread_exit_status = -1; /*******************************/
+  thread_current ()->info->exit_status = -1; /*******************************/
   switch (f->cs)
     {
     case SEL_UCSEG:

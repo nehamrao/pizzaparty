@@ -43,15 +43,6 @@ checkvaddr(const void * vaddr)
   if (pagedir_get_page (t->pagedir, vaddr))
     return true;
   return pagedir_get_page (init_page_dir, vaddr);
-
-/*  pde = pd + pd_no (vaddr);
-  printf("pd = %lx  pd_no(vaddr) = %lx  pde = %lx\n", pd, pd_no(vaddr), pde); //test
-  if (*pde == 0) 
-    return false;
-  pt = pde_get_pt(*pde); 
-  if (*pt == NULL)
-    return false;
-  return true;*/
 }
 
 /********************************************************************************/
@@ -76,15 +67,10 @@ process_execute (const char *file_name)
   char *first_space = strchr (fn_copy, ' ');
   /* TODO further check to make sure the string copied in prog_file_name
      is not longer than 16 */
-  //printf ("check first_space: %ld\n", first_space - fn_copy);
   if (first_space != NULL)
-    {
       strlcpy (prog_file_name, fn_copy, first_space -fn_copy + 1);
-    }
   else
-    {
       strlcpy (prog_file_name, fn_copy, strlen (fn_copy) + 1);
-    }
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (prog_file_name, PRI_DEFAULT, start_process, fn_copy);
@@ -125,7 +111,7 @@ start_process (void *file_name_)
   if (!success) 
 /* chunyan *******************************************************************/
     { 
-      t->thread_exit_status = -1;  
+      t->info->exit_status = -1;
       thread_exit ();
     }
 /* chunyan *******************************************************************/
@@ -164,10 +150,14 @@ process_wait (tid_t child_tid)
       child_info = list_entry (elem, struct child_info, child_elem);  
       if (child_info->child_thread->tid == child_tid)
       {
+        if (child_info->already_waited)
+          return -1;
+        if (!child_info->is_alive)
+          return child_info->exit_status;
         sema_down (&child_info->child_thread->sema_parent_wait);
-        list_remove (&child_info->child_elem);
-
-        return cur->child_exit_status;
+        child_info->already_waited = true;
+        //list_remove (&child_info->child_elem);
+        return child_info->exit_status;
       }
     }
   
@@ -182,8 +172,8 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
  /* chunyan *******************************************************************/
-  if (cur->tid > 1)
-    cur->parent_thread->child_exit_status = cur->thread_exit_status;
+//  if (cur->tid > 2)
+//    cur->parent_thread->child_exit_status = cur->thread_exit_status;
  /* chunyan *******************************************************************/
 
   /* Destroy the current process's page directory and switch back
@@ -204,8 +194,9 @@ process_exit (void)
     }
 /* chunyan *******************************************************************/
   if (cur->tid > 2) 
-    printf ("%s: exit(%d)\n", thread_name(), cur->thread_exit_status);
-  if ((cur->sema_parent_wait.value == 0) && (cur->tid > 1))
+    printf ("%s: exit(%d)\n", thread_name(), cur->info->exit_status);
+  cur->info->is_alive = false;
+  if ((cur->sema_parent_wait.value == 0) && (cur->tid > 2))
     sema_up (&cur->sema_parent_wait);
 /* chunyan *******************************************************************/
 
