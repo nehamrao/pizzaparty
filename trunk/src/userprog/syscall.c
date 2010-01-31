@@ -128,7 +128,8 @@ syscall_handler (struct intr_frame *f)
     }
 }
 
-static uint32_t pop (struct intr_frame *f, int offset)
+static uint32_t
+pop (struct intr_frame *f, int offset)
 {
   if (!checkvaddr (f->esp + offset))
     kill_process();
@@ -136,7 +137,7 @@ static uint32_t pop (struct intr_frame *f, int offset)
 }
 
 void
-kill_process()
+kill_process ()
 {
   struct thread *cur = thread_current ();
   cur->info->exit_status = -1;
@@ -314,7 +315,10 @@ read (int fd, void *buffer, unsigned size)
   if (!checkvaddr (buffer))
     kill_process();
 
-  ASSERT ((fd >= 2 && fd < 128) || (fd == 0));
+  if ((fd < 2 || fd >= 128) && (fd != 0))
+    {
+      kill_process ();
+    }
 
   /* number of bytes actually read */
   int result = 0;
@@ -335,7 +339,10 @@ read (int fd, void *buffer, unsigned size)
 
       /* get file info */
       lock_acquire (&t->lock_array_files);
-      ASSERT (t->array_files[fd] != NULL);
+      if (t->array_files[fd] == NULL)
+        {
+          kill_process ();
+        }
 
       struct file* pf = t->array_files[fd]->p_file;
       unsigned file_offset = t->array_files[fd]->pos;
@@ -362,7 +369,10 @@ write (int fd, const void *buffer, unsigned size)
   if (!checkvaddr (buffer))
     kill_process();
 
-  ASSERT ((fd >= 2 && fd < 128) || (fd == 1));
+  if ((fd < 2 || fd >= 128) && (fd != 1))
+    {
+      kill_process ();
+    }
 
   /* number of bytes actually written */
   int result = 0;
@@ -378,7 +388,10 @@ write (int fd, const void *buffer, unsigned size)
 
       /* get file */
       lock_acquire (&t->lock_array_files);
-      ASSERT (t->array_files[fd] != NULL);
+      if (t->array_files[fd] == NULL)
+        {
+          kill_process ();
+        }
 
       struct file* pf = t->array_files[fd]->p_file;
       unsigned file_offset = t->array_files[fd]->pos;
@@ -445,13 +458,19 @@ close (int fd)
      all file descriptors referring to the file are closed or the machine 
      shuts down.*/
 
-  ASSERT (fd >= 2 && fd < 128);
+  if (fd < 2 || fd >= 128)
+    {
+      kill_process ();
+    }
 
   /* get file info, and remove from array_files */
   struct thread* t = thread_current ();
   lock_acquire (&t->lock_array_files);
 
-  ASSERT (t->array_files[fd] != NULL);
+  if (t->array_files[fd] == NULL)
+    {
+      kill_process ();
+    }
   struct file* p_file = t->array_files[fd]->p_file;
   free (t->array_files[fd]);
   t->array_files[fd] = NULL;
