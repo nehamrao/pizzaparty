@@ -98,9 +98,14 @@ struct thread
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
 /* yinfeng *******************************************************************/
-    bool child_load_success;
-    struct semaphore sema_child_load;
-    struct list file_list;
+    /* used for syscall exec() */
+    bool child_load_success;            /* indicating success of loading 
+                                           executable file for child prbcess */
+    struct semaphore sema_child_load;   /* sema to ensure order */
+
+    /* used for syscall file related */
+    struct file_info *array_files[128]; /* array of open files */
+    struct lock lock_array_files;       /* lock to protect array of files */
 /* yinfeng *******************************************************************/
 /* chunyan *******************************************************************/
     int thread_exit_status;
@@ -118,13 +123,14 @@ struct thread
   };
 
 /* yinfeng *******************************************************************/
+/* structure to record relevant file information */
 struct file_info
   {
-    int fd;                             /* file descriptor */
-    int pos;                            /* position within file */
+    unsigned pos;                       /* position within file */
     struct file* p_file;                /* pointer to actual file structure */
-    struct list_elem elem;              /* list element */
   };
+/* global lock on function call to filesys.h and file.h */
+struct lock glb_lock_filesys;
 /* yinfeng *******************************************************************/
 /* chunyan *******************************************************************/
 struct child_info
