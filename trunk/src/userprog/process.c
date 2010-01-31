@@ -29,26 +29,26 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
    thread id, or TID_ERROR if the thread cannot be created. */
 
 /********************************************************************************/
-int checkvaddr(const void * vaddr)
+bool
+checkvaddr(const void * vaddr)
 {
-uint32_t *pt, *pde;
-uint32_t *pd;
-struct thread *t = thread_current ();
-pd = t->pagedir;
+  uint32_t *pt, *pde;
+  uint32_t *pd;
+  struct thread *t = thread_current ();
+  pd = t->pagedir;
 
-  if(is_user_vaddr (vaddr))
-  {
-    pde = pd + pd_no (vaddr);
-    pt = pde_get_pt(*pde); 
-    if (*pt == NULL)
-    {
-      return 0;
-    }
-  } else 
-    return 0;
- 
- return(1);
-
+  if (!is_user_vaddr (vaddr)) return false;
+  
+/*  void *upage = ((unsigned int)vaddr >> 22) << 22;
+  return pagedir_get_page (t->pagedir, upage);
+*/
+  pde = pd + pd_no (vaddr);
+  if (*pde == 0) 
+    return false;
+  pt = pde_get_pt(*pde); 
+  if (*pt == NULL)
+    return false;
+  return true;
 }
 
 /********************************************************************************/
@@ -176,7 +176,8 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
  /* chunyan *******************************************************************/
-  cur->parent_thread->child_exit_status = cur->thread_exit_status;
+  if (cur->tid > 1)
+    cur->parent_thread->child_exit_status = cur->thread_exit_status;
  /* chunyan *******************************************************************/
 
   /* Destroy the current process's page directory and switch back
@@ -196,7 +197,10 @@ process_exit (void)
       pagedir_destroy (pd);
     }
 /* chunyan *******************************************************************/
-  sema_up (&cur->sema_parent_wait);
+  if (cur->tid > 2) 
+    printf ("%s: exit(%d)\n", thread_name(), cur->thread_exit_status);
+  if ((cur->sema_parent_wait.value == 0) && (cur->tid > 1))
+    sema_up (&cur->sema_parent_wait);
 /* chunyan *******************************************************************/
 
 }

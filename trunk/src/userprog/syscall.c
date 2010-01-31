@@ -105,7 +105,6 @@ halt (void)
 void
 exit (int status)
 {
-  printf ("%s: exit(%d)\n", thread_name(), status);
   struct thread *cur = thread_current ();
   cur->thread_exit_status = status;
   thread_exit ();
@@ -117,6 +116,12 @@ exec (const char *cmd_line)
 {
   pid_t pid = (pid_t)process_execute (cmd_line);
 
+  if (!checkvaddr (cmd_line))
+    {
+      struct thread *cur = thread_current ();
+      cur->thread_exit_status = -1;
+      thread_exit ();     
+    }
   struct thread* t = thread_current ();
   sema_down (&t->sema_child_load);
   if (t->child_load_success)
@@ -138,7 +143,13 @@ wait (pid_t pid)
 bool
 create (const char *file, unsigned initial_size)
 {
-  return false;
+  if (!checkvaddr (file))
+    {
+      struct thread *cur = thread_current ();
+      cur->thread_exit_status = -1;
+      thread_exit ();     
+    }
+  return filesys_create (file, initial_size);
 }
 
 bool
