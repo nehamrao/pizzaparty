@@ -190,12 +190,14 @@ thread_create (const char *name, int priority,
 
 /* yinfeng *******************************************************************/
 /* chunyan *******************************************************************/
-  sema_init (&t->sema_parent_wait,0); 
+  sema_init (&t->sema_parent_wait, 0); 
   struct child_info *child_info = malloc (sizeof(struct child_info));
   child_info->child_thread = t;
   struct thread *cur = thread_current ();
   t->parent_thread = cur;
   list_push_back (&cur->child_list, &child_info->child_elem);
+  t->thread_exit_status = 0;
+  t->child_exit_status = 0; 
 /* chunyan *******************************************************************/
 
 
