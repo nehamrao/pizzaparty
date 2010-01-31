@@ -105,6 +105,7 @@ halt (void)
 void
 exit (int status)
 {
+    printf ("%s: exit(%d)\n", thread_name(), status);
     thread_exit ();
     // More to be added... Returning status.
 }

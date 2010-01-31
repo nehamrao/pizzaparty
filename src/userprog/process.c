@@ -73,7 +73,7 @@ process_execute (const char *file_name)
   char *first_space = strchr (fn_copy, ' ');
   /* TODO further check to make sure the string copied in prog_file_name
      is not longer than 16 */
-  printf ("check first_space: %ld\n", first_space - fn_copy);
+  //printf ("check first_space: %ld\n", first_space - fn_copy);
   if (first_space != NULL)
     {
       strlcpy (prog_file_name, fn_copy, first_space -fn_copy + 1);
@@ -437,15 +437,15 @@ load (const char *file_name, void (**eip) (void), void **esp)
   size_t word_len;
 
   curr = file_name + strlen (file_name);
-  printf ("TEST: %lx, %s, %d\n", curr, file_name, strlen(file_name));
+  //printf ("TEST: %lx, %s, %d\n", curr, file_name, strlen(file_name));
   while (curr >= file_name) {
-    printf ("TEST1: %lx\n", curr);
+    //printf ("TEST1: %lx\n", curr);
     /* skip delimiters between words */
     while (curr >= file_name && (strrchr (delimiters, *curr) != NULL || *curr == '\0')) {
       curr--;
     }
     word_end = curr + 1;
-    printf("TEST2: %lx\n", word_end);
+    //printf("TEST2: %lx\n", word_end);
 
     /* skip NON-delimiters in a word */
     while (curr >= file_name && strrchr (delimiters, *curr) == NULL) {
@@ -454,9 +454,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
     word_begin = curr + 1;
 
     word_len = word_end - word_begin;
-    printf("TEST4: %d\n", word_len);
+    //printf("TEST4: %d\n", word_len);
 
-    printf("TEST5: %lx, %lx, %lx\n", PHYS_BASE, p_ustack_top, p_ustack_top - word_len - 1);
+    //printf("TEST5: %lx, %lx, %lx\n", PHYS_BASE, p_ustack_top, p_ustack_top - word_len - 1);
 
     strlcpy (p_ustack_top - word_len - 1, word_begin, word_len + 1);
     *(p_ustack_top - 1) = '\0';
@@ -464,7 +464,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   }
 
   char* p_argv_begin = p_ustack_top;
-  printf("argv_begin = %lx %c\n", p_argv_begin, *p_argv_begin);
+  //printf("argv_begin = %lx %c\n", p_argv_begin, *p_argv_begin);
 
   /* round to nearest multiples of 4 */
   int count_limit;
@@ -481,11 +481,11 @@ load (const char *file_name, void (**eip) (void), void **esp)
   int argc = 0;
   while (p >= p_argv_begin) {
     p--;
-    printf ("p:\t%lx\t%s,p_argv_begin:\t%lx\t%s\n", p, p, p_argv_begin, p_argv_begin);
+    //printf ("p:\t%lx\t%s,p_argv_begin:\t%lx\t%s\n", p, p, p_argv_begin, p_argv_begin);
     while (p >= p_argv_begin && *p != '\0') {
       p--;
     }
-    printf ("p:\t%lx\t%s,p_argv_begin:\t%lx\t%s\n", p, p, p_argv_begin, p_argv_begin);
+    //printf ("p:\t%lx\t%s,p_argv_begin:\t%lx\t%s\n", p, p, p_argv_begin, p_argv_begin);
     p_ustack_top -= 4;
     *(int*)p_ustack_top = (p + 1);
     argc++;

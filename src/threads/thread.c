@@ -184,6 +184,21 @@ thread_create (const char *name, int priority,
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
 
+/* yinfeng *******************************************************************/
+  sema_init (&t->sema_child_load, 0);
+  /* t->child_load_success = false; */
+
+/* yinfeng *******************************************************************/
+/* chunyan *******************************************************************/
+  sema_init (&t->sema_parent_wait,0); 
+  struct child_info *child_info = malloc (sizeof(struct child_info));
+  child_info->child_thread = t;
+  struct thread *cur = thread_current ();
+  t->parent_thread = cur;
+  list_push_back (&cur->child_list, &child_info->child_elem);
+/* chunyan *******************************************************************/
+
+
   /* Prepare thread for first run by initializing its stack.
      Do this atomically so intermediate values for the 'stack' 
      member cannot be observed. */
@@ -468,26 +483,14 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
-/* yinfeng *******************************************************************/
-  sema_init (&t->sema_child_load, 0);
-  /* t->child_load_success = false; */
-  list_init (&t->file_list);
-/* yinfeng *******************************************************************/
-/* chunyan *******************************************************************/
-  list_init(&t->child_list);
-
-//#ifdef USERPROG
-  sema_init(&t->sema_parent_wait,0);
-  struct child_info *child_info=(struct child_info*)malloc(sizeof(child_info));
-  child_info->child_thread = t;
-  struct thread *cur = thread_current();
-  t->parent_thread = cur;
-  list_push_back(&cur->child_list,&child_info->child_elem);
-//#endif
-/* chunyan *******************************************************************/
-
   t->magic = THREAD_MAGIC;
   list_push_back (&all_list, &t->allelem);
+
+/* yinfeng *******************************************************************/
+  list_init (&t->file_list);
+  list_init (&t->child_list);
+/* chunyan *******************************************************************/
+
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
