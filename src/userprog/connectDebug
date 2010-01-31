@@ -1,1 +1,1 @@
-pintos-gdb kernel.o
+pintos-gdb ./build/kernel.o
