@@ -66,8 +66,26 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
+/* yinfeng *******************************************************************/
+  /* separate program file_name from following arguments
+     and only send this program file_name to thread_create */
+  char prog_file_name[16];  /* same length with that in struct thread */
+  char *first_space = strchr (fn_copy, ' ');
+  /* TODO further check to make sure the string copied in prog_file_name
+     is not longer than 16 */
+  printf ("check first_space: %ld\n", first_space - fn_copy);
+  if (first_space != NULL)
+    {
+      strlcpy (prog_file_name, fn_copy, first_space -fn_copy + 1);
+    }
+  else
+    {
+      strlcpy (prog_file_name, fn_copy, strlen (fn_copy) + 1);
+    }
+
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (prog_file_name, PRI_DEFAULT, start_process, fn_copy);
+/* yinfeng *******************************************************************/
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy);
 
@@ -262,7 +280,27 @@ load (const char *file_name, void (**eip) (void), void **esp)
   process_activate ();
 
   /* Open executable file. */
-  file = filesys_open (file_name);
+/* yinfeng *******************************************************************/
+  /* separate program file_name from following arguments
+     and only send this program file_name to thread_create */
+  char prog_file_name[16];  /* same length with that in struct thread */
+  char *first_space = strchr (file_name, ' ');
+  /* TODO further check to make sure the string copied in prog_file_name
+     is not longer than 16 */
+  if (first_space != NULL)
+    {
+      strlcpy (prog_file_name, file_name, first_space - file_name + 1);
+    }
+  else
+    {
+      strlcpy (prog_file_name, file_name, strlen (file_name) + 1);
+    }
+
+  /* original statement */
+  /* file = filesys_open (file_name); */
+  file = filesys_open (prog_file_name);
+/* yinfeng *******************************************************************/
+
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", file_name);
@@ -406,9 +444,11 @@ load (const char *file_name, void (**eip) (void), void **esp)
   int argc = 0;
   while (p >= p_argv_begin) {
     p--;
-    while (p >= p_argv_begin && strrchr (delimiters, *p) == NULL) {
+    printf ("p:\t%lx\t%s,p_argv_begin:\t%lx\t%s\n", p, p, p_argv_begin, p_argv_begin);
+    while (p >= p_argv_begin && *p != '\0') {
       p--;
     }
+    printf ("p:\t%lx\t%s,p_argv_begin:\t%lx\t%s\n", p, p, p_argv_begin, p_argv_begin);
     p_ustack_top -= 4;
     *(int*)p_ustack_top = (p + 1);
     argc++;
