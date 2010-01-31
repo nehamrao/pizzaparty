@@ -118,10 +118,10 @@ start_process (void *file_name_)
   palloc_free_page (file_name);
   if (!success) 
 /* chunyan *******************************************************************/
-   { 
-    t->thread_exit_status = -1;  
-    thread_exit ();
-   }
+    { 
+      t->thread_exit_status = -1;  
+      thread_exit ();
+    }
 /* chunyan *******************************************************************/
 //    thread_exit ();
 
@@ -145,33 +145,27 @@ start_process (void *file_name_)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
-  /************************************************************************/
-//  while (1)
-//  {
-//  }
    /* chunyan *******************************************************************/
-  struct thread *cur = thread_current();
-  struct list_elem *temp_elem; 
-  struct child_info *temp_child_info;
-  int temp_status;
- for(temp_elem = list_begin(&cur->child_list);temp_elem != list_end(&cur->child_list);temp_elem = list_next(temp_elem))
-  {  
-       temp_child_info = list_entry(temp_elem,struct child_info, child_elem);  
-       if(temp_child_info->child_thread->tid == child_tid)
-       {
-         sema_down(&temp_child_info->child_thread->sema_parent_wait);
-//         temp_status = temp_child_info->child_thread->child_exit_status;
-         list_remove(&temp_child_info->child_elem);
-//         sema_up(&temp_child_info->child_thread->sema_child_wait);
-         return(temp_status);
-       }
-  }
+  struct thread *cur = thread_current ();
+  struct list_elem *elem; 
+  struct child_info *child_info;
+
+  for (elem = list_begin (&cur->child_list); elem != list_end (&cur->child_list);
+    elem = list_next (elem))
+    {  
+      child_info = list_entry (elem, struct child_info, child_elem);  
+      if (child_info->child_thread->tid == child_tid)
+      {
+        sema_down (&child_info->child_thread->sema_parent_wait);
+        list_remove (&child_info->child_elem);
+
+        return cur->child_exit_status;
+      }
+    }
   
 /* chunyan *******************************************************************/
-   
-  /************************************************************************/
   return -1;
 }
 
@@ -202,11 +196,7 @@ process_exit (void)
       pagedir_destroy (pd);
     }
 /* chunyan *******************************************************************/
-  sema_up(&cur->sema_parent_wait);
-//  sema_init(&cur->sema_child_wait,0);
-//  sema_down(&cur->sema_child_wait);
-   
-
+  sema_up (&cur->sema_parent_wait);
 /* chunyan *******************************************************************/
 
 }

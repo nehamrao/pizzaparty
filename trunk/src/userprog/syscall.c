@@ -105,9 +105,11 @@ halt (void)
 void
 exit (int status)
 {
-    printf ("%s: exit(%d)\n", thread_name(), status);
-    thread_exit ();
-    // More to be added... Returning status.
+  printf ("%s: exit(%d)\n", thread_name(), status);
+  struct thread *cur = thread_current ();
+  cur->thread_exit_status = status;
+  thread_exit ();
+  return;
 }
 
 pid_t
