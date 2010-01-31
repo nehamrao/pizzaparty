@@ -109,7 +109,7 @@ struct thread
 //    struct semaphore sema_child_wait;
     struct semaphore sema_parent_wait;
     struct list child_list;
-    struct thread * parent_thread;
+    struct thread *parent_thread;
 /* chunyan *******************************************************************/
 #endif
 
@@ -128,10 +128,10 @@ struct file_info
 /* yinfeng *******************************************************************/
 /* chunyan *******************************************************************/
 struct child_info
-{
-struct thread *child_thread;
-struct list_elem child_elem;
-};
+  {
+    struct thread *child_thread;
+    struct list_elem child_elem;
+  };
 /* chunyan *******************************************************************/
 
 /* If false (default), use round-robin scheduler.
