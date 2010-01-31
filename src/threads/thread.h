@@ -108,13 +108,13 @@ struct thread
     struct lock lock_array_files;       /* lock to protect array of files */
 /* yinfeng *******************************************************************/
 /* chunyan *******************************************************************/
-    int thread_exit_status;
-    int child_exit_status;                    /*Indicating whether success exit, true
-                                           means success*/
-//    struct semaphore sema_child_wait;
+//    int thread_exit_status;
+//    int child_exit_status;                    /*Indicating whether success exit, true
+//                                           means success*/
     struct semaphore sema_parent_wait;
     struct list child_list;
     struct thread *parent_thread;
+    struct child_info *info;
 /* chunyan *******************************************************************/
 #endif
 
@@ -136,6 +136,9 @@ struct lock glb_lock_filesys;
 struct child_info
   {
     struct thread *child_thread;
+    bool already_waited;
+    bool is_alive;
+    int exit_status;
     struct list_elem child_elem;
   };
 /* chunyan *******************************************************************/

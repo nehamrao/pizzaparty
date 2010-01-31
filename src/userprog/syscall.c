@@ -139,7 +139,7 @@ void
 kill_process()
 {
   struct thread *cur = thread_current ();
-  cur->thread_exit_status = -1;
+  cur->info->exit_status = -1;
   thread_exit ();     
 }
 
@@ -153,7 +153,7 @@ void
 exit (int status)
 {
   struct thread *cur = thread_current ();
-  cur->thread_exit_status = status;
+  cur->info->exit_status = status;
   thread_exit ();
   return;
 }
@@ -186,7 +186,8 @@ exec (const char *cmd_line)
 
   if (!checkvaddr (cmd_line))
     kill_process();
-  pid_t pid = (pid_t)process_execute (cmd_line);
+  pid_t pid = (pid_t) process_execute (cmd_line);
+
   struct thread* t = thread_current ();
   sema_down (&t->sema_child_load);
   if (t->child_load_success)
@@ -202,7 +203,7 @@ exec (const char *cmd_line)
 int
 wait (pid_t pid)
 {
-  return 0;
+  return process_wait (pid);
 }
 
 bool
