@@ -117,7 +117,13 @@ start_process (void *file_name_)
   /* If load failed, quit. */
   palloc_free_page (file_name);
   if (!success) 
+/* chunyan *******************************************************************/
+   { 
+    t->thread_exit_status = -1;  
     thread_exit ();
+   }
+/* chunyan *******************************************************************/
+//    thread_exit ();
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -142,9 +148,29 @@ int
 process_wait (tid_t child_tid UNUSED) 
 {
   /************************************************************************/
-  while (1)
-  {
+//  while (1)
+//  {
+//  }
+   /* chunyan *******************************************************************/
+  struct thread *cur = thread_current();
+  struct list_elem *temp_elem; 
+  struct child_info *temp_child_info;
+  int temp_status;
+ for(temp_elem = list_begin(&cur->child_list);temp_elem != list_end(&cur->child_list);temp_elem = list_next(temp_elem))
+  {  
+       temp_child_info = list_entry(temp_elem,struct child_info, child_elem);  
+       if(temp_child_info->child_thread->tid == child_tid)
+       {
+         sema_down(&temp_child_info->child_thread->sema_parent_wait);
+//         temp_status = temp_child_info->child_thread->child_exit_status;
+         list_remove(&temp_child_info->child_elem);
+//         sema_up(&temp_child_info->child_thread->sema_child_wait);
+         return(temp_status);
+       }
   }
+  
+/* chunyan *******************************************************************/
+   
   /************************************************************************/
   return -1;
 }
@@ -155,6 +181,9 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+ /* chunyan *******************************************************************/
+  cur->parent_thread->child_exit_status = cur->thread_exit_status;
+ /* chunyan *******************************************************************/
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -172,6 +201,14 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
+/* chunyan *******************************************************************/
+  sema_up(&cur->sema_parent_wait);
+//  sema_init(&cur->sema_child_wait,0);
+//  sema_down(&cur->sema_child_wait);
+   
+
+/* chunyan *******************************************************************/
+
 }
 
 /* Sets up the CPU for running user code in the current
@@ -471,7 +508,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
   // stack pointer
   *esp = p_ustack_top;
-  hex_dump (0, PHYS_BASE - 80, 80, 1);
+//  hex_dump (0, PHYS_BASE - 80, 80, 1);
 /* yinfeng ******************************************************************/
 
 

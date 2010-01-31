@@ -102,6 +102,15 @@ struct thread
     struct semaphore sema_child_load;
     struct list file_list;
 /* yinfeng *******************************************************************/
+/* chunyan *******************************************************************/
+    int thread_exit_status;
+    int child_exit_status;                    /*Indicating whether success exit, true
+                                           means success*/
+//    struct semaphore sema_child_wait;
+    struct semaphore sema_parent_wait;
+    struct list child_list;
+    struct thread * parent_thread;
+/* chunyan *******************************************************************/
 #endif
 
     /* Owned by thread.c. */
@@ -117,6 +126,13 @@ struct file_info
     struct list_elem elem;              /* list element */
   };
 /* yinfeng *******************************************************************/
+/* chunyan *******************************************************************/
+struct child_info
+{
+struct thread *child_thread;
+struct list_elem child_elem;
+};
+/* chunyan *******************************************************************/
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.

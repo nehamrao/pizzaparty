@@ -473,6 +473,19 @@ init_thread (struct thread *t, const char *name, int priority)
   /* t->child_load_success = false; */
   list_init (&t->file_list);
 /* yinfeng *******************************************************************/
+/* chunyan *******************************************************************/
+  list_init(&t->child_list);
+
+//#ifdef USERPROG
+  sema_init(&t->sema_parent_wait,0);
+  struct child_info *child_info=(struct child_info*)malloc(sizeof(child_info));
+  child_info->child_thread = t;
+  struct thread *cur = thread_current();
+  t->parent_thread = cur;
+  list_push_back(&cur->child_list,&child_info->child_elem);
+//#endif
+/* chunyan *******************************************************************/
+
   t->magic = THREAD_MAGIC;
   list_push_back (&all_list, &t->allelem);
 }
