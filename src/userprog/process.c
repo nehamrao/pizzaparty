@@ -37,18 +37,21 @@ checkvaddr(const void * vaddr)
   struct thread *t = thread_current ();
   pd = t->pagedir;
 
-  if (!is_user_vaddr (vaddr)) return false;
-  
-/*  void *upage = ((unsigned int)vaddr >> 22) << 22;
-  return pagedir_get_page (t->pagedir, upage);
-*/
-  pde = pd + pd_no (vaddr);
+  if (!is_user_vaddr (vaddr)) 
+    return false;
+ 
+  if (pagedir_get_page (t->pagedir, vaddr))
+    return true;
+  return pagedir_get_page (init_page_dir, vaddr);
+
+/*  pde = pd + pd_no (vaddr);
+  printf("pd = %lx  pd_no(vaddr) = %lx  pde = %lx\n", pd, pd_no(vaddr), pde); //test
   if (*pde == 0) 
     return false;
   pt = pde_get_pt(*pde); 
   if (*pt == NULL)
     return false;
-  return true;
+  return true;*/
 }
 
 /********************************************************************************/

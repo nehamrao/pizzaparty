@@ -42,6 +42,7 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f) 
 {
+  struct thread *cur;
   /* get syscall number */
   int syscall_no = (int)(pop (f, 0));
 
@@ -122,15 +123,24 @@ syscall_handler (struct intr_frame *f)
         break;
 
       default:
-        /* TODO 
-        ?? throw exception here indicating no specified operation */
+        kill_process ();    
         break;
     }
 }
 
 static uint32_t pop (struct intr_frame *f, int offset)
 {
+  if (!checkvaddr (f->esp + offset))
+    kill_process();
   return *(uint32_t *)(f->esp + offset);
+}
+
+void
+kill_process()
+{
+  struct thread *cur = thread_current ();
+  cur->thread_exit_status = -1;
+  thread_exit ();     
 }
 
 void
@@ -170,18 +180,13 @@ exec (const char *cmd_line)
      files. For now, we recommend against modifying code in the filesys 
      directory.*/
 
-  /* TODO check address */
-
   /* execute process
      and load() would happen during the initialization */
-  pid_t pid = (pid_t)process_execute (cmd_line);
+  
 
   if (!checkvaddr (cmd_line))
-    {
-      struct thread *cur = thread_current ();
-      cur->thread_exit_status = -1;
-      thread_exit ();     
-    }
+    kill_process();
+  pid_t pid = (pid_t)process_execute (cmd_line);
   struct thread* t = thread_current ();
   sema_down (&t->sema_child_load);
   if (t->child_load_success)
@@ -204,12 +209,8 @@ bool
 create (const char *file, unsigned initial_size)
 {
   if (!checkvaddr (file))
-    {
-      struct thread *cur = thread_current ();
-      cur->thread_exit_status = -1;
-      thread_exit ();     
-    }
-  
+    kill_process();
+
   lock_acquire (&glb_lock_filesys);
   bool success = filesys_create (file, initial_size);
   lock_release (&glb_lock_filesys);
@@ -225,7 +226,8 @@ remove (const char *file)
      A file may be removed regardless of whether it is open or closed,
      and removing an open file does not close it. */
 
-  /* TODO check address */
+  if (!checkvaddr (file))
+    kill_process();
 
   lock_acquire (&glb_lock_filesys);
   bool success = filesys_remove (file);
@@ -241,7 +243,8 @@ open (const char *file)
    It is better not to set an arbitrary limit. You may impose 
    a limit of 128 open files per process, if necessary.*/
 
-  /* TODO check address */
+  if (!checkvaddr (file))
+    kill_process();
 
   /* open file */
   lock_acquire (&glb_lock_filesys);
@@ -307,7 +310,8 @@ filesize (int fd)
 int
 read (int fd, void *buffer, unsigned size)
 {
-  /* TODO check address */
+  if (!checkvaddr (buffer))
+    kill_process();
 
   ASSERT ((fd >= 2 && fd < 128) || (fd == 0));
 
@@ -354,7 +358,8 @@ read (int fd, void *buffer, unsigned size)
 int
 write (int fd, const void *buffer, unsigned size)
 {
-  /* TODO check address */
+  if (!checkvaddr (buffer))
+    kill_process();
 
   ASSERT ((fd >= 2 && fd < 128) || (fd == 1));
 
