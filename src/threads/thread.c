@@ -489,7 +489,14 @@ init_thread (struct thread *t, const char *name, int priority)
   list_push_back (&all_list, &t->allelem);
 
 /* yinfeng *******************************************************************/
-  list_init (&t->file_list);
+  sema_init (&t->sema_child_load, 0);
+  lock_init (&t->lock_array_files);
+  int i = 0;
+  for (i = 0; i < 128; i++)
+    {
+      t->array_files[i] = NULL;
+    }
+  lock_init (&glb_lock_filesys);
   list_init (&t->child_list);
 /* chunyan *******************************************************************/
 
