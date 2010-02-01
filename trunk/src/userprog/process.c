@@ -96,15 +96,15 @@ start_process (void *file_name_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
 
-/* yinfeng *******************************************************************/
+  /* protect filesys operations */
   lock_acquire (&glb_lock_filesys);
   success = load (file_name, &if_.eip, &if_.esp);
   lock_release (&glb_lock_filesys);
 
+  /* notify parent success loading of program files by child process */
   struct thread* t = thread_current ();
   t->parent_thread->child_load_success = success;
   sema_up (&t->parent_thread->sema_child_load);
-/* yinfeng *******************************************************************/
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
@@ -311,6 +311,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   process_activate ();
 
   /* Open executable file. */
+
 /* yinfeng *******************************************************************/
   /* separate program file_name from following arguments
      and only send this program file_name to thread_create */

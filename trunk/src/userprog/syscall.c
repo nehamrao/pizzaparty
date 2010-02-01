@@ -8,29 +8,38 @@
 #include "devices/input.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
+#include "userprog/process.h"
 
 static void syscall_handler (struct intr_frame *);
 
-/* TODO
-   3.3.5 Denying Writes to Executables
-   Add code to deny writes to files in use as executables. Many OSes do this 
-   because of the unpredictable results if a process tried to run code that 
-   was in the midst of being changed on disk. This is especially important 
-   once virtual memory is implemented in project 3, but it can't hurt even now.
-   You can use file_deny_write() to prevent writes to an open file. Calling 
-   file_allow_write() on the file will re-enable them (unless the file is 
-   denied writes by another opener). Closing a file will also re-enable 
-   writes. Thus, to deny writes to a process's executable, you must keep it 
-   open as long as the process is still running.*/
+/* static methods providing service to lib/user/syscall.h */
+static void _halt (void);
+static void _exit (int status);
+static pid_t _exec (const char *cmd_line);
+static int _wait (pid_t pid);
+static bool _create (const char *file, unsigned initial_size);
+static bool _remove (const char *file);
+static int _open (const char *file);
+static int _filesize (int fd);
+static int _read (int fd, void *buffer, unsigned size);
+static int _write (int fd, const void *buffer, unsigned size);
+static void _seek (int fd, unsigned position);
+static unsigned _tell (int fd);
+static void _close (int fd);
 
 
-/* read arguments previously pushed on top of user stack, however, this is 
+/* static methods providing utility functions to above methods */
+
+/* read arguments previously pushed on top of user stack, note this is 
    just a read with give offset, and stack pointer is not changed */
-static uint32_t pop (struct intr_frame *f, int offset);
+static uint32_t read_stack (struct intr_frame *f, int offset);
 
 /* add a file into array_files of a thread 
    and allocate a file descriptor on the way*/
 static int add_file (struct thread* t, struct file_info* f_info);
+
+/* kill a process and exit with status -1 */
+static void kill_process (void);
 
 
 void
@@ -42,84 +51,81 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f) 
 {
-  struct thread *cur;
   /* get syscall number */
-  int syscall_no = (int)(pop (f, 0));
+  int syscall_no = (int)(read_stack (f, 0));
 
   /* dispatch to individual calls */
-  uint32_t arg1;
-  uint32_t arg2;
-  uint32_t arg3;
+  uint32_t arg1, arg2, arg3;
   switch (syscall_no)
     {
       case SYS_HALT:
-        halt ();
+        _halt ();
         break;
 
       case SYS_EXIT:
-        arg1 = pop (f, 4);
-        exit ((int)arg1);
+        arg1 = read_stack (f, 4);
+        _exit ((int)arg1);
         break;
 
       case SYS_EXEC:
-        arg1 = pop (f, 4);
-        f->eax = (uint32_t)exec ((const char*)arg1);
+        arg1 = read_stack (f, 4);
+        f->eax = (uint32_t)_exec ((const char*)arg1);
         break;
 
       case SYS_WAIT:
-        arg1 = pop (f, 4);
-        f->eax = (uint32_t)wait ((int)arg1);
+        arg1 = read_stack (f, 4);
+        f->eax = (uint32_t)_wait ((int)arg1);
         break;
 
       case SYS_CREATE:
-        arg1 = pop (f, 4);
-        arg2 = pop (f, 8);
-        f->eax = (uint32_t)create ((const char*)arg1, (unsigned)arg2);
+        arg1 = read_stack (f, 4);
+        arg2 = read_stack (f, 8);
+        f->eax = (uint32_t)_create ((const char*)arg1, (unsigned)arg2);
         break;
 
       case SYS_REMOVE:
-        arg1 = pop (f, 4);
-        f->eax = (uint32_t)remove ((const char*)arg1);
+        arg1 = read_stack (f, 4);
+        f->eax = (uint32_t)_remove ((const char*)arg1);
         break;
 
       case SYS_OPEN:
-        arg1 = pop (f, 4);
-        f->eax = (uint32_t)open ((const char*)arg1);
+        arg1 = read_stack (f, 4);
+        f->eax = (uint32_t)_open ((const char*)arg1);
         break;
 
       case SYS_FILESIZE:
-        arg1 = pop (f, 4);
-        f->eax = (uint32_t)filesize ((int)arg1);
+        arg1 = read_stack (f, 4);
+        f->eax = (uint32_t)_filesize ((int)arg1);
         break;
 
       case SYS_READ:
-        arg1 = pop (f, 4);
-        arg2 = pop (f, 8);
-        arg3 = pop (f, 12);
-        f->eax = (uint32_t)read ((int)arg1, (void*)arg2, (unsigned)arg3);
+        arg1 = read_stack (f, 4);
+        arg2 = read_stack (f, 8);
+        arg3 = read_stack (f, 12);
+        f->eax = (uint32_t)_read ((int)arg1, (void*)arg2, (unsigned)arg3);
         break;
 
       case SYS_WRITE:
-        arg1 = pop (f, 4);
-        arg2 = pop (f, 8);
-        arg3 = pop (f, 12);
-        f->eax = (uint32_t)write ((int)arg1, (const void*)arg2, (unsigned)arg3);
+        arg1 = read_stack (f, 4);
+        arg2 = read_stack (f, 8);
+        arg3 = read_stack (f, 12);
+        f->eax = (uint32_t)_write ((int)arg1, (const void*)arg2, (unsigned)arg3);
         break;
 
       case SYS_SEEK:
-        arg1 = pop (f, 4);
-        arg2 = pop (f, 8);
-        seek ((int)arg1, (unsigned)arg2);
+        arg1 = read_stack (f, 4);
+        arg2 = read_stack (f, 8);
+        _seek ((int)arg1, (unsigned)arg2);
         break;
 
       case SYS_TELL:
-        arg1 = pop (f, 4);
-        f->eax = (uint32_t)tell ((int)arg1);
+        arg1 = read_stack (f, 4);
+        f->eax = (uint32_t)_tell ((int)arg1);
         break;
 
       case SYS_CLOSE:
-        arg1 = pop (f, 4);
-        close ((int)arg1);
+        arg1 = read_stack (f, 4);
+        _close ((int)arg1);
         break;
 
       default:
@@ -128,67 +134,35 @@ syscall_handler (struct intr_frame *f)
     }
 }
 
-static uint32_t
-pop (struct intr_frame *f, int offset)
-{
-  if (!checkvaddr (f->esp + offset))
-    kill_process();
-  return *(uint32_t *)(f->esp + offset);
-}
 
-void
-kill_process ()
-{
-  struct thread *cur = thread_current ();
-  cur->info->exit_status = -1;
-  thread_exit ();     
-}
 
-void
-halt (void)
+static void
+_halt (void)
 {
   shutdown_power_off ();
 }
 
-void
-exit (int status)
+static void
+_exit (int status)
 {
   struct thread *cur = thread_current ();
   cur->info->exit_status = status;
   thread_exit ();
-  return;
 }
 
-pid_t
-exec (const char *cmd_line)
+static pid_t
+_exec (const char *cmd_line)
 {
-  /* TODO */
-  /* What should happen if an exec fails midway through loading?
-     exec should return -1 if the child process fails to load for any reason. 
-     This includes the case where the load fails part of the way through the 
-     process (e.g. where it runs out of memory in the multi-oom test).
-     Therefore, the parent process cannot return from the exec system call 
-     until it is established whether the load was successful or not. The 
-     child must communicate this information to its parent using appropriate 
-     synchronization, such as a semaphore (see section A.3.2 Semaphores), to 
-     ensure that the information is communicated without race conditions.*/
-
-  /* You must synchronize system calls so that any number of user processes 
-     can make them at once. In particular, it is not safe to call into the 
-     file system code provided in the filesys directory from multiple threads 
-     at once. Your system call implementation must treat the file system code 
-     as a critical section. Don't forget that process_execute() also accesses 
-     files. For now, we recommend against modifying code in the filesys 
-     directory.*/
-
-  /* execute process
-     and load() would happen during the initialization */
-  
-
+  /* check address */
   if (!checkvaddr (cmd_line))
-    kill_process();
+    {
+      kill_process();
+    }
+
+  /* begin executing */
   pid_t pid = (pid_t) process_execute (cmd_line);
 
+  /* wait to receive message about child loading success */
   struct thread* t = thread_current ();
   sema_down (&t->sema_child_load);
   if (t->child_load_success)
@@ -201,18 +175,22 @@ exec (const char *cmd_line)
     }
 }
 
-int
-wait (pid_t pid)
+static int
+_wait (pid_t pid)
 {
   return process_wait (pid);
 }
 
-bool
-create (const char *file, unsigned initial_size)
+static bool
+_create (const char *file, unsigned initial_size)
 {
+  /* check address */
   if (!checkvaddr (file))
-    kill_process();
+    {
+      kill_process();
+    }
 
+  /* protected filesys operation: create file */
   lock_acquire (&glb_lock_filesys);
   bool success = filesys_create (file, initial_size);
   lock_release (&glb_lock_filesys);
@@ -220,17 +198,16 @@ create (const char *file, unsigned initial_size)
   return success;
 }
 
-bool
-remove (const char *file)
+static bool
+_remove (const char *file)
 {
-  /* TODO to discuss here
-     according to the project assignment document
-     A file may be removed regardless of whether it is open or closed,
-     and removing an open file does not close it. */
-
+  /* check address */
   if (!checkvaddr (file))
-    kill_process();
+    {
+      kill_process();
+    }
 
+  /* protected filesys operation: remove file */
   lock_acquire (&glb_lock_filesys);
   bool success = filesys_remove (file);
   lock_release (&glb_lock_filesys);
@@ -238,17 +215,16 @@ remove (const char *file)
   return success;
 }
 
-int
-open (const char *file)
+static int
+_open (const char *file)
 {
-  /* TODO Can I set a maximum number of open files per process?
-   It is better not to set an arbitrary limit. You may impose 
-   a limit of 128 open files per process, if necessary.*/
-
+  /* check address */
   if (!checkvaddr (file))
-    kill_process();
+    {
+      kill_process();
+    }
 
-  /* open file */
+  /* protected filesys operation: open file */
   lock_acquire (&glb_lock_filesys);
   struct file* f_struct = filesys_open (file);
   lock_release (&glb_lock_filesys);
@@ -257,9 +233,6 @@ open (const char *file)
     {
       return -1;
     }
-
-  /* get current thread */
-  struct thread* t = thread_current ();
 
   /* initialize file_info structure */
   struct file_info* f_info =
@@ -272,6 +245,7 @@ open (const char *file)
   f_info->p_file = f_struct;
 
   /* for f_info: allocate file descriptor, add to array_files */
+  struct thread* t = thread_current ();
   lock_acquire (&t->lock_array_files);
   int fd = add_file (t, f_info);
   lock_release (&t->lock_array_files);
@@ -279,46 +253,38 @@ open (const char *file)
   return fd;
 }
 
-static int
-add_file (struct thread* t, struct file_info* f_info)
-{
-  int fd = -1;
-  for (fd = 2; fd < 128; fd++)
-    {
-      if (t->array_files[fd] == NULL)   /* available fd number */
-        {
-          t->array_files[fd] = f_info;  /* add file */
-          return fd;                    /* return file descriptor */
-        }
-    }
-  return fd;
-}
 
-int
-filesize (int fd)
+
+static int
+_filesize (int fd)
 {
+  /* check file descriptor */
   if (fd < 2 || fd >= 128)
     {
       kill_process ();
     }
 
+  /* protected filesys operation: get file size */
   struct thread* t = thread_current ();
-
-  /* result is file size in bytes */
   lock_acquire (&glb_lock_filesys);
   int result = (int)file_length (t->array_files[fd]->p_file);
   lock_release (&glb_lock_filesys);
 
+  /* result is file size in bytes */
   return result;
 }
 
-int
-read (int fd, void *buffer, unsigned size)
+static int
+_read (int fd, void *buffer, unsigned size)
 {
+  /* check address */
   if (!checkvaddr (buffer))
-    kill_process();
+    {
+      kill_process();
+    }
 
-  if ((fd < 2 || fd >= 128) && (fd != 0))
+  /* check file descriptor */
+  if ((fd < 2 || fd >= 128) && (fd != STDIN_FILENO))
     {
       kill_process ();
     }
@@ -326,21 +292,20 @@ read (int fd, void *buffer, unsigned size)
   /* number of bytes actually read */
   int result = 0;
 
-  if (fd == 0)                  /* read from input */
+  if (fd == STDIN_FILENO)       /* read from input */
     {
-      int i = 0;
+      unsigned i = 0;
       for (i = 0; i < size; i++)
         {
           *(uint8_t*)buffer = input_getc();
           result++;
-          buffer++;/* TODO is it OK to change buffer? */
+          buffer++;
         }
     }
   else                          /* read from file */
     {
-      struct thread* t = thread_current();
-
       /* get file info */
+      struct thread* t = thread_current();
       lock_acquire (&t->lock_array_files);
       if (t->array_files[fd] == NULL)
         {
@@ -352,12 +317,13 @@ read (int fd, void *buffer, unsigned size)
 
       lock_release (&t->lock_array_files);
 
-      /* read and record length of read */
+      /* protected filesys operation:
+         read and record length of read */
       lock_acquire (&glb_lock_filesys);
       result = file_read_at (pf, buffer, size, file_offset);
       lock_release (&glb_lock_filesys);
 
-      /* advance position within file for current thread */
+      /* increment position within file for current thread */
       lock_acquire (&t->lock_array_files);
       t->array_files[fd]->pos += result;
       lock_release (&t->lock_array_files);
@@ -366,13 +332,17 @@ read (int fd, void *buffer, unsigned size)
   return result;
 }
 
-int
-write (int fd, const void *buffer, unsigned size)
+static int
+_write (int fd, const void *buffer, unsigned size)
 {
+  /* check address */
   if (!checkvaddr (buffer))
-    kill_process();
+    {
+      kill_process();
+    }
 
-  if ((fd < 2 || fd >= 128) && (fd != 1))
+  /* check file descriptor */
+  if ((fd < 2 || fd >= 128) && (fd != STDOUT_FILENO))
     {
       kill_process ();
     }
@@ -380,16 +350,15 @@ write (int fd, const void *buffer, unsigned size)
   /* number of bytes actually written */
   int result = 0;
 
-  if (fd == 1)                  /* write to console */
+  if (fd == STDOUT_FILENO)      /* write to console */
     {
       putbuf (buffer, size);
       result = size;
     }
   else                          /* write to file */
     {
-      struct thread* t = thread_current();
-
       /* get file */
+      struct thread* t = thread_current();
       lock_acquire (&t->lock_array_files);
       if (t->array_files[fd] == NULL)
         {
@@ -401,12 +370,13 @@ write (int fd, const void *buffer, unsigned size)
 
       lock_release (&t->lock_array_files);
 
-      /* write and record length of read */
+      /* protected filesys operation:
+         write and record length of read */
       lock_acquire (&glb_lock_filesys);
       result = file_write_at (pf, buffer, size, file_offset);
       lock_release (&glb_lock_filesys);
 
-      /* advance position within file for current thread */
+      /* increment position within file for current thread */
       lock_acquire (&t->lock_array_files);
       t->array_files[fd]->pos += result;
       lock_release (&t->lock_array_files);
@@ -415,16 +385,17 @@ write (int fd, const void *buffer, unsigned size)
   return result;
 }
 
-void
-seek (int fd, unsigned position)
+static void
+_seek (int fd, unsigned position)
 {
+  /* check file descriptor */
   if (fd < 2 || fd >= 128)
     {
       kill_process ();
     }
 
+  /* seek to desired position */
   struct thread* t = thread_current ();
-
   lock_acquire (&t->lock_array_files);
   if (t->array_files[fd] == NULL)
     {
@@ -436,40 +407,30 @@ seek (int fd, unsigned position)
   lock_release (&t->lock_array_files);
 }
 
-unsigned
-tell (int fd)
+static unsigned
+_tell (int fd)
 {
+  /* check file descriptor */
   if (fd < 2 || fd >= 128)
     {
       kill_process ();
     }
 
+  /* tell current position */
   struct thread* t = thread_current ();
-
   lock_acquire (&t->lock_array_files);
+
   unsigned result = t->array_files[fd]->pos;
+
   lock_release (&t->lock_array_files);
 
   return result;
 }
 
-void
-close (int fd)
+static void
+_close (int fd)
 {
-  /* Unix-like semantics for filesys_remove() are implemented. That is, if a
-     file is open when it is removed, its blocks are not deallocated and it 
-     may still be accessed by any threads that have it open, until the last 
-     one closes it. See Removing an Open File, for more information. */
-
-  /* What happens when an open file is removed?
-     You should implement the standard Unix semantics for files. That is, 
-     when a file is removed any process which has a file descriptor for that 
-     file may continue to use that descriptor. This means that they can read 
-     and write from the file. The file will not have a name, and no other 
-     processes will be able to open it, but it will continue to exist until 
-     all file descriptors referring to the file are closed or the machine 
-     shuts down.*/
-
+  /* check file descriptor */
   if (fd < 2 || fd >= 128)
     {
       kill_process ();
@@ -489,9 +450,51 @@ close (int fd)
 
   lock_release (&t->lock_array_files);
 
-  /* close file */
+  /* protectec filesys operation: close file */
   lock_acquire (&glb_lock_filesys);
   file_close (p_file);
   lock_release (&glb_lock_filesys);
+}
+
+
+/* utility methods */
+
+static uint32_t
+read_stack (struct intr_frame *f, int offset)
+{
+  /* check address */
+  if (!checkvaddr (f->esp + offset))
+    {
+      kill_process();
+    }
+
+  return *(uint32_t *)(f->esp + offset);
+}
+
+static void
+kill_process ()
+{
+  struct thread *cur = thread_current ();
+  cur->info->exit_status = -1;
+  thread_exit ();     
+}
+
+static int
+add_file (struct thread* t, struct file_info* f_info)
+{
+  int fd = -1;
+  for (fd = 2; fd < 128; fd++)
+    {
+      /* found available file descriptor number */
+      if (t->array_files[fd] == NULL)
+        {
+          /* add file */
+          t->array_files[fd] = f_info;
+
+          /* return file descriptor */
+          return fd;
+        }
+    }
+  return fd;
 }
 
