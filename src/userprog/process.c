@@ -103,7 +103,7 @@ start_process (void *file_name_)
 
   struct thread* t = thread_current ();
   t->child_load_success = success;
-  sema_up (&t->sema_child_load);
+  sema_up (&t->parent_thread->sema_child_load);
 /* yinfeng *******************************************************************/
 
   /* If load failed, quit. */
