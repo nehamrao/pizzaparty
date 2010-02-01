@@ -297,7 +297,10 @@ add_file (struct thread* t, struct file_info* f_info)
 int
 filesize (int fd)
 {
-  ASSERT (fd >= 2 && fd < 128);
+  if (fd < 2 || fd >= 128)
+    {
+      kill_process ();
+    }
 
   struct thread* t = thread_current ();
 
@@ -415,12 +418,18 @@ write (int fd, const void *buffer, unsigned size)
 void
 seek (int fd, unsigned position)
 {
-  ASSERT (fd >= 2 && fd < 128);
+  if (fd < 2 || fd >= 128)
+    {
+      kill_process ();
+    }
 
   struct thread* t = thread_current ();
 
   lock_acquire (&t->lock_array_files);
-  ASSERT (t->array_files[fd] != NULL);
+  if (t->array_files[fd] == NULL)
+    {
+      kill_process ();
+    }
 
   t->array_files[fd]->pos = position;
 
@@ -430,7 +439,10 @@ seek (int fd, unsigned position)
 unsigned
 tell (int fd)
 {
-  ASSERT (fd >= 2 && fd < 128);
+  if (fd < 2 || fd >= 128)
+    {
+      kill_process ();
+    }
 
   struct thread* t = thread_current ();
 
