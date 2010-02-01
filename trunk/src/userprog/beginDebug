@@ -1,2 +1,4 @@
-pintos -p ./build/tests/userprog/exec-missing -a exec-missing -- -q
-pintos -v --gdb -- run exec-missing
+make build/tests/userprog/wait-twice.result
+pintos -p ./build/tests/userprog/wait-twice -a wait-twice -- -q
+pintos -p ./build/tests/userprog/child-simple -a child-simple -- -q
+pintos -v --gdb -- run wait-twice

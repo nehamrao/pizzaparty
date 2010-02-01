@@ -102,7 +102,7 @@ start_process (void *file_name_)
   lock_release (&glb_lock_filesys);
 
   struct thread* t = thread_current ();
-  t->child_load_success = success;
+  t->parent_thread->child_load_success = success;
   sema_up (&t->parent_thread->sema_child_load);
 /* yinfeng *******************************************************************/
 
@@ -148,14 +148,15 @@ process_wait (tid_t child_tid)
     elem = list_next (elem))
     {  
       child_info = list_entry (elem, struct child_info, child_elem);  
-      if (child_info->child_thread->tid == child_tid)
+      if (child_info->tid == child_tid)
       {
+//        printf("already_waited: %ld\n", child_info->already_waited);
         if (child_info->already_waited)
           return -1;
-        if (!child_info->is_alive)
-          return child_info->exit_status;
-        sema_down (&child_info->child_thread->sema_parent_wait);
         child_info->already_waited = true;
+        if (!child_info->is_alive)
+          return child_info->exit_status;        
+        sema_down (&child_info->child_thread->sema_parent_wait);
         //list_remove (&child_info->child_elem);
         return child_info->exit_status;
       }
@@ -194,8 +195,10 @@ process_exit (void)
     }
 /* chunyan *******************************************************************/
   if (cur->tid > 2) 
+  {
     printf ("%s: exit(%d)\n", thread_name(), cur->info->exit_status);
-  cur->info->is_alive = false;
+    cur->info->is_alive = false;
+  } 
   if ((cur->sema_parent_wait.value == 0) && (cur->tid > 2))
     sema_up (&cur->sema_parent_wait);
 /* chunyan *******************************************************************/

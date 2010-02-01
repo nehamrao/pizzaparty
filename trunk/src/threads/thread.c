@@ -184,24 +184,20 @@ thread_create (const char *name, int priority,
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
 
-/* yinfeng *******************************************************************/
-  sema_init (&t->sema_child_load, 0);
-  /* t->child_load_success = false; */
-
-/* yinfeng *******************************************************************/
 /* chunyan *******************************************************************/
-  sema_init (&t->sema_parent_wait, 0); 
+
   struct child_info *child_info = malloc (sizeof(struct child_info));
+  if (child_info == NULL)
+    printf ("Malloc ERROR!!-----");
   t->info = child_info;
   child_info->child_thread = t;
+  child_info->tid = tid;
   child_info->already_waited = false;
   child_info->is_alive = true;
   child_info->exit_status = 0;
   struct thread *cur = thread_current ();
   t->parent_thread = cur;
   list_push_back (&cur->child_list, &child_info->child_elem);
-//  t->thread_exit_status = 0;
-//  t->child_exit_status = 0; 
 /* chunyan *******************************************************************/
 
 
@@ -494,6 +490,8 @@ init_thread (struct thread *t, const char *name, int priority)
 
 /* yinfeng *******************************************************************/
   sema_init (&t->sema_child_load, 0);
+  sema_init (&t->sema_parent_wait, 0); 
+
   lock_init (&t->lock_array_files);
   int i = 0;
   for (i = 0; i < 128; i++)
