@@ -153,6 +153,21 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+  
+  int fd = -1;
+  for(fd=2;fd<128;fd++)
+  {
+
+      if (cur->array_files[fd] != NULL)
+        {
+          /* add file */
+          file_close(cur->array_files[fd]->p_file);
+        }
+    
+  }
+   if(cur->running_file != NULL)
+   file_close(cur->running_file);
+
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -171,10 +186,11 @@ process_exit (void)
       pagedir_destroy (pd);
     }
 /* chunyan *******************************************************************/
-  if (cur->tid > 2) 	/***** REVISE HERE***/
+  if (cur->tid != 2) 	/***** REVISE HERE***/
   {
     printf ("%s: exit(%d)\n", thread_name(), cur->info->exit_status);
     cur->info->is_alive = false;
+    if ((cur->sema_wait.value == 0) && (cur->tid > 2))
     sema_up (&cur->parent_thread->sema_wait);
   }
 /* chunyan *******************************************************************/
@@ -303,6 +319,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   /***** original statement */
   /* file = filesys_open (file_name); */
   file = filesys_open (prog_file_name);
+
 /* yinfeng *******************************************************************/
 
   if (file == NULL) 
@@ -310,6 +327,10 @@ load (const char *file_name, void (**eip) (void), void **esp)
       printf ("load: %s: open failed\n", file_name);
       goto done; 
     }
+  
+     
+  file_deny_write (file);
+  t->running_file = file;
 
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
@@ -393,9 +414,12 @@ load (const char *file_name, void (**eip) (void), void **esp)
   success = true;
 
   argument_passing (file_name, esp);
+  
+  return success;  
 
  done:
   /* We arrive here whether the load is successful or not. */
+  if(file != NULL)
   file_close (file);
   return success;
 }
