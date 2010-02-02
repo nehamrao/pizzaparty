@@ -40,6 +40,12 @@ Yinfeng   Qin      <yinfeng@stanford.edu>
 
 >> A3: Why does Pintos implement strtok_r() but not strtok()?
 
+strtok() typically uses an internal buffer to store the states (where we 
+are within the string last time) and is thus not thread-safe.
+
+strtok_r() takes a third arguments to determine the place within the string 
+to go on searching tokens, and thus works in multi-thread systems like Pintos.
+
 >> A4: In Pintos, the kernel separates commands into a executable name
 >> and arguments.  In Unix-like systems, the shell does this
 >> separation.  Identify at least two advantages of the Unix approach.
@@ -56,6 +62,17 @@ Yinfeng   Qin      <yinfeng@stanford.edu>
 >> B2: Describe how file descriptors are associated with open files.
 >> Are file descriptors unique within the entire OS or just within a
 >> single process?
+
+In our implementation, each process maintains its own list of open files in 
+an array of length 128. While the first 2 elements are intentionally left
+NULL for STDIN_FILENO and STDOUT_FILENO, each subsequent array index is used
+as a file descriptor corresponding to the open file stored in this array 
+element. When opening a file we search in the array to find a vacancy, store
+the pointer to file_info structure there, and return the index as file 
+descriptor. And when closing a file we can go directly according to file 
+descriptor (index in array) to find the file_info structure and close it.
+
+This way file descritpors are unique just within a single process.
 
 ---- ALGORITHMS ----
 
@@ -107,6 +124,27 @@ Yinfeng   Qin      <yinfeng@stanford.edu>
 
 >> B10: What advantages or disadvantages can you see to your design
 >> for file descriptors?
+
+In our implementation, each process maintains its own list of open files in 
+an array of length 128. While the first 2 elements are intentionally left
+NULL for STDIN_FILENO and STDOUT_FILENO, each subsequent array index is used
+as a file descriptor corresponding to the open file stored in this array 
+element. When opening a file we search in the array to find a vacancy, store 
+the pointer to file_info structure there, and return the index as file 
+descriptor. And when closing a file we can go directly according to file 
+descriptor (index in array) to find the file_info structure and close it.
+
+The main advantages of our design for file descriptors lie in the overall
+speed performance. Our implemention gives O(n) time complexity for 
+allocating file descriptors when opening files, while O(1) time complexity 
+for all subsequent query operations in any syscall involving file descriptors.
+
+The disadvantages of our design could be that the number of open files 
+allowed for each process is limited, or that when the number of open files is
+small, it wastes memory space. We have considered these short-comings and
+understood we can solve them by using dynamic strctures such as list. It is 
+our choice to favor speed that we choose the design with array and file 
+descriptor as index in the array.
 
 >> B11: The default tid_t to pid_t mapping is the identity mapping.
 >> If you changed it, what advantages are there to your approach?
