@@ -19,33 +19,14 @@
 #include "threads/vaddr.h"
 #include "threads/pte.h"
 
-
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+static void argument_passing (char *file_name, void **esp);
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
-
-/********************************************************************************/
-bool
-checkvaddr(const void * vaddr)
-{
-  uint32_t *pt, *pde;
-  uint32_t *pd;
-  struct thread *t = thread_current ();
-  pd = t->pagedir;
-
-  if (!is_user_vaddr (vaddr)) 
-    return false;
- 
-  if (pagedir_get_page (t->pagedir, vaddr))
-    return true;
-  return pagedir_get_page (init_page_dir, vaddr);
-}
-
-/********************************************************************************/
 
 tid_t
 process_execute (const char *file_name) 
@@ -103,8 +84,8 @@ start_process (void *file_name_)
 
   /* notify parent success loading of program files by child process */
   struct thread* t = thread_current ();
-  t->parent_thread->child_load_success = success;
-  sema_up (&t->parent_thread->sema_child_load);
+  t->parent_thread->child_load_success = success;   //****BUG HERE****//
+  sema_up (&t->parent_thread->sema_load);
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
@@ -115,7 +96,6 @@ start_process (void *file_name_)
       thread_exit ();
     }
 /* chunyan *******************************************************************/
-//    thread_exit ();
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -142,22 +122,21 @@ process_wait (tid_t child_tid)
    /* chunyan *******************************************************************/
   struct thread *cur = thread_current ();
   struct list_elem *elem; 
-  struct child_info *child_info;
+  struct info *child_info;
 
+  /* Scan the childlist, looking for the one that matches tid */
   for (elem = list_begin (&cur->child_list); elem != list_end (&cur->child_list);
     elem = list_next (elem))
     {  
-      child_info = list_entry (elem, struct child_info, child_elem);  
+      child_info = list_entry (elem, struct info, elem);
       if (child_info->tid == child_tid)
       {
-//        printf("already_waited: %ld\n", child_info->already_waited);
-        if (child_info->already_waited)
+        if (child_info->already_waited)      /* If already waited, exit */
           return -1;
-        child_info->already_waited = true;
-        if (!child_info->is_alive)
+        child_info->already_waited = true;	
+        if (!child_info->is_alive)	     /* If not alive, return status */
           return child_info->exit_status;        
-        sema_down (&child_info->child_thread->sema_parent_wait);
-        //list_remove (&child_info->child_elem);
+        sema_down (&child_info->thread->sema_wait); /****** BUG HERE*/
         return child_info->exit_status;
       }
     }
@@ -172,10 +151,6 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
- /* chunyan *******************************************************************/
-//  if (cur->tid > 2)
-//    cur->parent_thread->child_exit_status = cur->thread_exit_status;
- /* chunyan *******************************************************************/
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -194,13 +169,13 @@ process_exit (void)
       pagedir_destroy (pd);
     }
 /* chunyan *******************************************************************/
-  if (cur->tid > 2) 
+  if (cur->tid > 2) 	/***** REVISE HERE***/
   {
     printf ("%s: exit(%d)\n", thread_name(), cur->info->exit_status);
     cur->info->is_alive = false;
   } 
-  if ((cur->sema_parent_wait.value == 0) && (cur->tid > 2))
-    sema_up (&cur->sema_parent_wait);
+  if ((cur->sema_wait.value == 0) && (cur->tid > 2))	//****BUG HERE
+    sema_up (&cur->sema_wait);
 /* chunyan *******************************************************************/
 
 }
@@ -320,15 +295,11 @@ load (const char *file_name, void (**eip) (void), void **esp)
   /* TODO further check to make sure the string copied in prog_file_name
      is not longer than 16 */
   if (first_space != NULL)
-    {
       strlcpy (prog_file_name, file_name, first_space - file_name + 1);
-    }
   else
-    {
       strlcpy (prog_file_name, file_name, strlen (file_name) + 1);
-    }
 
-  /* original statement */
+  /***** original statement */
   /* file = filesys_open (file_name); */
   file = filesys_open (prog_file_name);
 /* yinfeng *******************************************************************/
@@ -420,92 +391,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
   success = true;
 
-
-/* yinfeng ******************************************************************/
-  char* p_ustack_top = *esp;
-
-  /* scan through fn_copy in reverse order and copy to argv */
-  char* delimiters = " ";
-  char* curr;
-  char* word_begin;
-  char* word_end;
-  size_t word_len;
-
-  curr = file_name + strlen (file_name);
-  //printf ("TEST: %lx, %s, %d\n", curr, file_name, strlen(file_name));
-  while (curr >= file_name) {
-    //printf ("TEST1: %lx\n", curr);
-    /* skip delimiters between words */
-    while (curr >= file_name && (strrchr (delimiters, *curr) != NULL || *curr == '\0')) {
-      curr--;
-    }
-    word_end = curr + 1;
-    //printf("TEST2: %lx\n", word_end);
-
-    /* skip NON-delimiters in a word */
-    while (curr >= file_name && strrchr (delimiters, *curr) == NULL) {
-      curr--;
-    }
-    word_begin = curr + 1;
-
-    word_len = word_end - word_begin;
-    //printf("TEST4: %d\n", word_len);
-
-    //printf("TEST5: %lx, %lx, %lx\n", PHYS_BASE, p_ustack_top, p_ustack_top - word_len - 1);
-
-    strlcpy (p_ustack_top - word_len - 1, word_begin, word_len + 1);
-    *(p_ustack_top - 1) = '\0';
-    p_ustack_top -= (word_len + 1);
-  }
-
-  char* p_argv_begin = p_ustack_top;
-  //printf("argv_begin = %lx %c\n", p_argv_begin, *p_argv_begin);
-
-  /* round to nearest multiples of 4 */
-  int count_limit;
-  if (((int)p_ustack_top) % 4 == 3) count_limit = 1; else count_limit = 2;
-  while (count_limit > 0) {
-    p_ustack_top--;
-    *p_ustack_top = 0;
-    if (((int)p_ustack_top) % 4 == 0) 
-       count_limit--;
-  }
-
-  /* write argv[argc-1 ... 0] */
-  char *p = PHYS_BASE - 1;
-  int argc = 0;
-  while (p >= p_argv_begin) {
-    p--;
-    //printf ("p:\t%lx\t%s,p_argv_begin:\t%lx\t%s\n", p, p, p_argv_begin, p_argv_begin);
-    while (p >= p_argv_begin && *p != '\0') {
-      p--;
-    }
-    //printf ("p:\t%lx\t%s,p_argv_begin:\t%lx\t%s\n", p, p, p_argv_begin, p_argv_begin);
-    p_ustack_top -= 4;
-    *(int*)p_ustack_top = (p + 1);
-    argc++;
-  }
-
-  // argv
-  p_ustack_top -= 4;
-  *(int*)p_ustack_top = p_ustack_top + 4;
-  
-
-  // argc
-  p_ustack_top -= 4;
-  *(int*)p_ustack_top = argc;
-  
-
-  // fake return address
-  p_ustack_top -= 4;
-  *(int*)p_ustack_top = NULL;
- 
-
-  // stack pointer
-  *esp = p_ustack_top;
-//  hex_dump (0, PHYS_BASE - 80, 80, 1);
-/* yinfeng ******************************************************************/
-
+  argument_passing (file_name, esp);
 
  done:
   /* We arrive here whether the load is successful or not. */
@@ -660,3 +546,84 @@ install_page (void *upage, void *kpage, bool writable)
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
+
+/* yinfeng ******************************************************************/
+/**** more comments need to be added **/
+static void 
+argument_passing (char *file_name, void **esp)
+{
+  char* p_ustack_top = *esp;
+
+  /* scan through fn_copy in reverse order and copy to argv */
+  char* delimiters = " ";
+  char* curr;
+  char* word_begin;
+  char* word_end;
+  size_t word_len;
+
+  curr = file_name + strlen (file_name);
+  while (curr >= file_name) 
+  {
+    /* skip delimiters between words */
+    while (curr >= file_name && (strrchr (delimiters, *curr) != NULL || *curr == '\0')) 
+      curr--;
+    word_end = curr + 1;
+
+    /* skip NON-delimiters in a word */
+    while (curr >= file_name && strrchr (delimiters, *curr) == NULL) 
+      curr--;
+    word_begin = curr + 1;
+
+    word_len = word_end - word_begin;
+
+    strlcpy (p_ustack_top - word_len - 1, word_begin, word_len + 1);
+    *(p_ustack_top - 1) = '\0';
+    p_ustack_top -= (word_len + 1);
+  }
+
+  char* p_argv_begin = p_ustack_top;
+
+  /* round to nearest multiples of 4 */
+  int count_limit;
+  if (((int)p_ustack_top) % 4 == 3) count_limit = 1; else count_limit = 2;
+  while (count_limit > 0) 
+  {
+    p_ustack_top--;
+    *p_ustack_top = 0;
+    if (((int)p_ustack_top) % 4 == 0) 
+       count_limit--;
+  }
+
+  /* write argv[argc-1 ... 0] */
+  char *p = PHYS_BASE - 1;
+  int argc = 0;
+  while (p >= p_argv_begin) 
+  {
+    p--;
+    while (p >= p_argv_begin && *p != '\0') 
+      p--;
+
+    p_ustack_top -= 4;
+    *(int*)p_ustack_top = (p + 1);
+    argc++;
+  }
+
+  /* Push argv */
+  p_ustack_top -= 4;
+  *(int*)p_ustack_top = p_ustack_top + 4;
+  
+
+  /* Push argc */
+  p_ustack_top -= 4;
+  *(int*)p_ustack_top = argc;
+  
+
+  /* Push fake return address */
+  p_ustack_top -= 4;
+  *(int*)p_ustack_top = NULL;
+ 
+
+  /* Update stack pointer */
+  *esp = p_ustack_top;
+}
+/* yinfeng ******************************************************************/

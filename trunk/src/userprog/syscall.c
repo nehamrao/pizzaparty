@@ -4,6 +4,8 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/malloc.h"
+#include "threads/vaddr.h"
+#include "threads/init.h"
 #include "devices/shutdown.h"
 #include "devices/input.h"
 #include "filesys/file.h"
@@ -26,7 +28,7 @@ static int _write (int fd, const void *buffer, unsigned size);
 static void _seek (int fd, unsigned position);
 static unsigned _tell (int fd);
 static void _close (int fd);
-
+static bool checkvaddr(const void * vaddr);
 
 /* static methods providing utility functions to above methods */
 
@@ -155,24 +157,19 @@ _exec (const char *cmd_line)
 {
   /* check address */
   if (!checkvaddr (cmd_line))
-    {
       kill_process();
-    }
 
   /* begin executing */
   pid_t pid = (pid_t) process_execute (cmd_line);
 
   /* wait to receive message about child loading success */
   struct thread* t = thread_current ();
-  sema_down (&t->sema_child_load);
+  sema_down (&t->sema_load);
+
   if (t->child_load_success)
-    {
       return pid;
-    }
   else
-    {
       return -1;
-    }
 }
 
 static int
@@ -412,9 +409,7 @@ _tell (int fd)
 {
   /* check file descriptor */
   if (fd < 2 || fd >= 128)
-    {
       kill_process ();
-    }
 
   /* tell current position */
   struct thread* t = thread_current ();
@@ -464,9 +459,7 @@ read_stack (struct intr_frame *f, int offset)
 {
   /* check address */
   if (!checkvaddr (f->esp + offset))
-    {
       kill_process();
-    }
 
   return *(uint32_t *)(f->esp + offset);
 }
@@ -474,9 +467,8 @@ read_stack (struct intr_frame *f, int offset)
 static void
 kill_process ()
 {
-  struct thread *cur = thread_current ();
-  cur->info->exit_status = -1;
-  thread_exit ();     
+  _exit (-1);
+  return;
 }
 
 static int
@@ -497,4 +489,22 @@ add_file (struct thread* t, struct file_info* f_info)
     }
   return fd;
 }
+
+
+static bool
+checkvaddr(const void * vaddr)
+{
+  uint32_t *pt, *pde;
+  uint32_t *pd;
+  struct thread *t = thread_current ();
+  pd = t->pagedir;
+
+  if (!is_user_vaddr (vaddr)) 
+    return false;
+ 
+  if (pagedir_get_page (t->pagedir, vaddr))
+    return true;
+  return pagedir_get_page (init_page_dir, vaddr);
+}
+
 

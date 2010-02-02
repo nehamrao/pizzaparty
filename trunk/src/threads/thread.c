@@ -68,6 +68,7 @@ static void init_thread (struct thread *, const char *name, int priority);
 static bool is_thread (struct thread *) UNUSED;
 static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
+static void init_info (struct thread *t, tid_t tid); 
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
@@ -107,6 +108,8 @@ thread_start (void)
 {
   /* Create the idle thread. */
   struct semaphore idle_started;
+
+  init_info (initial_thread, initial_thread->tid);
   sema_init (&idle_started, 0);
   thread_create ("idle", PRI_MIN, idle, &idle_started);
 
@@ -184,22 +187,8 @@ thread_create (const char *name, int priority,
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
 
-/* chunyan *******************************************************************/
-
-  struct child_info *child_info = malloc (sizeof(struct child_info));
-  if (child_info == NULL)
-    printf ("Malloc ERROR!!-----");
-  t->info = child_info;
-  child_info->child_thread = t;
-  child_info->tid = tid;
-  child_info->already_waited = false;
-  child_info->is_alive = true;
-  child_info->exit_status = 0;
-  struct thread *cur = thread_current ();
-  t->parent_thread = cur;
-  list_push_back (&cur->child_list, &child_info->child_elem);
-/* chunyan *******************************************************************/
-
+  /* Initialize thread info */
+  init_info (t, tid);
 
   /* Prepare thread for first run by initializing its stack.
      Do this atomically so intermediate values for the 'stack' 
@@ -489,20 +478,44 @@ init_thread (struct thread *t, const char *name, int priority)
   list_push_back (&all_list, &t->allelem);
 
 /* yinfeng *******************************************************************/
-  sema_init (&t->sema_child_load, 0);
-  sema_init (&t->sema_parent_wait, 0); 
-
-  lock_init (&t->lock_array_files);
+  /* Initialize semas and locks */
+  sema_init (&t->sema_load, 0);
+  sema_init (&t->sema_wait, 0); 
   int i = 0;
   for (i = 0; i < 128; i++)
-    {
-      t->array_files[i] = NULL;
-    }
-  lock_init (&glb_lock_filesys);
+      t->array_files[i] = NULL;  //***JACK, mallock?
+  lock_init (&t->lock_array_files);
+  lock_init (&glb_lock_filesys); //***BUG HERE***//
   list_init (&t->child_list);
 /* chunyan *******************************************************************/
 
 }
+
+/* chunyan *******************************************************************/
+
+/* Initialize struct info of the current thread */ 
+static void
+init_info (struct thread *t, tid_t tid)
+{
+  struct info *info = malloc (sizeof (struct info));
+  if (info == NULL)
+    thread_exit();
+
+  t->info = info;
+  info->thread = t;
+  info->tid = tid;
+  info->already_waited = false;
+  info->is_alive = true;
+  info->exit_status = 0;
+  
+  if (t == initial_thread) return;
+
+  struct thread *cur = thread_current ();
+  t->parent_thread = cur;
+  list_push_back (&cur->child_list, &info->elem);
+  return;
+}
+/* chunyan *******************************************************************/
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
    returns a pointer to the frame's base. */

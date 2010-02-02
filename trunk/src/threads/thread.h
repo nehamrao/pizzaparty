@@ -99,17 +99,15 @@ struct thread
     uint32_t *pagedir;                  /* Page directory. */
 /* yinfeng *******************************************************************/
     /* used for syscall exec() */
-    bool child_load_success;            /* indicating success of loading 
-                                           executable file for child prbcess */
-    struct semaphore sema_child_load;   /* sema to ensure order */
-
-    /* used for syscall file related */
-    struct file_info *array_files[128]; /* array of open files */
-    struct lock lock_array_files;       /* lock to protect array of files */
-    struct semaphore sema_parent_wait;
-    struct list child_list;
-    struct thread *parent_thread;
-    struct child_info *info;
+    bool child_load_success;            /* Indicate success of loading 
+                                           executable file for child process */
+    struct semaphore sema_load;   	/* Sema to ensure load order */
+    struct semaphore sema_wait;		/* Sema to ensure wait order */
+    struct file_info *array_files[128]; /* Array of open files */
+    struct lock lock_array_files;       /* Lock to protect array of files */
+    struct list child_list;		/* Record thread's children */
+    struct thread *parent_thread;	/* Record parent thread */
+    struct info *info;			/* Infomation pointer */
 /* chunyan *******************************************************************/
 #endif
 
@@ -126,16 +124,18 @@ struct file_info
   };
 /* global lock on function call to filesys.h and file.h */
 struct lock glb_lock_filesys;
-/* yinfeng *******************************************************************/
-/* chunyan *******************************************************************/
-struct child_info
+
+/* Structure to record necessary infomation which could be retrieved even 
+   after the process has exited. */
+struct info
   {
-    struct thread *child_thread;
-    bool already_waited;
-    bool is_alive;
-    int exit_status;
-    tid_t tid;
-    struct list_elem child_elem;
+    struct thread *thread;		/* Record thread address */
+    bool already_waited;		/* Whether the process has already been 
+					   waited by its parent*/
+    bool is_alive;			/* Whether the process is running */
+    int exit_status;			/* Record exit status */
+    tid_t tid;				/* Record the tid */
+    struct list_elem elem;		/* For parent thread's child_list */
   };
 /* chunyan *******************************************************************/
 

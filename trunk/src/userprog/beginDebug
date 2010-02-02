@@ -1,4 +1,3 @@
-make build/tests/userprog/wait-twice.result
-pintos -p ./build/tests/userprog/wait-twice -a wait-twice -- -q
-pintos -p ./build/tests/userprog/child-simple -a child-simple -- -q
-pintos -v --gdb -- run wait-twice
+make build/tests/userprog/no-vm/child-simple.result
+pintos -p ./build/tests/userprog/no-vm/child-simple -a child-simple -- -q
+pintos -v --gdb -- run child-simple
