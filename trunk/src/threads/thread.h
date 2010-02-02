@@ -108,6 +108,7 @@ struct thread
     struct list child_list;		/* Record thread's children */
     struct thread *parent_thread;	/* Record parent thread */
     struct info *info;			/* Infomation pointer */
+    struct file * running_file;
 /* chunyan *******************************************************************/
 #endif
 
