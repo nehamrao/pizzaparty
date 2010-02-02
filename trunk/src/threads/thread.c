@@ -93,6 +93,7 @@ thread_init (void)
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
+  lock_init (&glb_lock_filesys);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -481,11 +482,12 @@ init_thread (struct thread *t, const char *name, int priority)
   /* Initialize semas and locks */
   sema_init (&t->sema_load, 0);
   sema_init (&t->sema_wait, 0); 
+  t->child_load_success = true;
   int i = 0;
   for (i = 0; i < 128; i++)
       t->array_files[i] = NULL;  //***JACK, mallock?
   lock_init (&t->lock_array_files);
-  lock_init (&glb_lock_filesys); //***BUG HERE***//
+//  lock_init (&glb_lock_filesys); //***BUG HERE***//
   list_init (&t->child_list);
 /* chunyan *******************************************************************/
 
