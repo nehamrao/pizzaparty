@@ -30,11 +30,40 @@ Yinfeng   Qin      <yinfeng@stanford.edu>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+We did not rely on new struct, global of static varialbes here to implement
+argument passing. However, we do design separate functions for the task,
+they are in process.c:
+
+/* parse cmd_line, separate program file name and following arguments
+   and push to stack exactly as illustrated in pintos document 3.5.1. */
+static bool argument_passing (const char *cmd_line, void **esp);
+
+/* push 4 bytes of data on top of stack at *p_stack, adding safety check
+   to ensure the push does not overflow stack page */
+static bool push_4byte (char** p_stack, void* val, void** esp);
+
+/* separates the program file name from command line  */
+static void get_prog_file_name (const char* cmd_line, char* prog_file_name);
+
+
 ---- ALGORITHMS ----
 
 >> A2: Briefly describe how you implemented argument parsing.  How do
 >> you arrange for the elements of argv[] to be in the right order?
 >> How do you avoid overflowing the stack page?
+
+We scan in reverse direction (from right to left) to find each argument 
+within the input command line, and for each argument encountered, we push it 
+on top of user stack beginning from PHYS_BASE - 1; after successfully pushing
+all arguments and performing word-alignment, we then scan from PHYS_BASE - 1 
+to find the beginning address of each argument, and push it on stack. This
+way, when we want to get arguments back, we can just using pop operation to 
+ensure the right order of arguments.
+
+We add a utility function push_4byte to push pointers or integers on top of 
+user stack page, and make boundary check to make sure the push does not 
+overflow the stack page. For other push operations used to store argument
+string, we also do similar boundary checks.
 
 ---- RATIONALE ----
 

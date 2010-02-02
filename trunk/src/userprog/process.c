@@ -21,15 +21,16 @@
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
-static void argument_passing (char *file_name, void **esp);
+static bool argument_passing (const char *cmd_line, void **esp);
+static bool push_4byte (char** p_stack, void* val, void** esp);
+static void get_prog_file_name (const char* cmd_line, char* prog_file_name);
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
-
 tid_t
-process_execute (const char *file_name) 
+process_execute (const char *cmd_line) 
 {
   char *fn_copy;
   tid_t tid;
@@ -39,19 +40,14 @@ process_execute (const char *file_name)
   fn_copy = palloc_get_page (0);
   if (fn_copy == NULL)
     return TID_ERROR;
-  strlcpy (fn_copy, file_name, PGSIZE);
+  strlcpy (fn_copy, cmd_line, PGSIZE);
 
 /* yinfeng *******************************************************************/
   /* separate program file_name from following arguments
-     and only send this program file_name to thread_create */
-  char prog_file_name[16];  /* same length with that in struct thread */
-  char *first_space = strchr (fn_copy, ' ');
-  /* TODO further check to make sure the string copied in prog_file_name
-     is not longer than 16 */
-  if (first_space != NULL)
-      strlcpy (prog_file_name, fn_copy, first_space -fn_copy + 1);
-  else
-      strlcpy (prog_file_name, fn_copy, strlen (fn_copy) + 1);
+     and only send this program file_name to thread_create, 
+     16 is the same length with that in struct thread */
+  char prog_file_name[16];
+  get_prog_file_name (fn_copy, prog_file_name);
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (prog_file_name, PRI_DEFAULT, start_process, fn_copy);
@@ -121,7 +117,7 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid) 
 {
-   /* chunyan *******************************************************************/
+  /* chunyan *******************************************************************/
   struct thread *cur = thread_current ();
   struct list_elem *elem; 
   struct info *child_info;
@@ -286,7 +282,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
    and its initial stack pointer into *ESP.
    Returns true if successful, false otherwise. */
 bool
-load (const char *file_name, void (**eip) (void), void **esp) 
+load (const char *cmd_line, void (**eip) (void), void **esp) 
 {
   struct thread *t = thread_current ();
   struct Elf32_Ehdr ehdr;
@@ -302,28 +298,19 @@ load (const char *file_name, void (**eip) (void), void **esp)
   process_activate ();
 
   /* Open executable file. */
-
 /* yinfeng *******************************************************************/
   /* separate program file_name from following arguments
-     and only send this program file_name to thread_create */
-  char prog_file_name[16];  /* same length with that in struct thread */
-  char *first_space = strchr (file_name, ' ');
-  /* TODO further check to make sure the string copied in prog_file_name
-     is not longer than 16 */
-  if (first_space != NULL)
-      strlcpy (prog_file_name, file_name, first_space - file_name + 1);
-  else
-      strlcpy (prog_file_name, file_name, strlen (file_name) + 1);
+     and only send this program file_name to thread_create, 
+     16 is the same length with that in struct thread */
+  char prog_file_name[16];
+  get_prog_file_name (cmd_line, prog_file_name);
 
-  /***** original statement */
-  /* file = filesys_open (file_name); */
   file = filesys_open (prog_file_name);
-
 /* yinfeng *******************************************************************/
 
   if (file == NULL) 
     {
-      printf ("load: %s: open failed\n", file_name);
+      printf ("load: %s: open failed\n", prog_file_name);
       goto done; 
     }
   
@@ -340,7 +327,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
       || ehdr.e_phentsize != sizeof (struct Elf32_Phdr)
       || ehdr.e_phnum > 1024) 
     {
-      printf ("load: %s: error loading executable\n", file_name);
+      printf ("load: %s: error loading executable\n", prog_file_name);
       goto done; 
     }
 
@@ -410,10 +397,12 @@ load (const char *file_name, void (**eip) (void), void **esp)
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
 
+  /* conduct argument passing here */
+  if (!argument_passing (cmd_line, esp))
+    goto done;
+  
   success = true;
 
-  argument_passing (file_name, esp);
-  
   return success;  
 
  done:
@@ -572,9 +561,12 @@ install_page (void *upage, void *kpage, bool writable)
 }
 
 /* yinfeng ******************************************************************/
-/**** more comments need to be added **/
-static void 
-argument_passing (char *file_name, void **esp)
+/* parse cmd_line, separate program file name and following arguments
+   push argv content, word-alignment, then argv pointers and argc, and 
+   finally fake return address in reverse order exactly as illustrated in 
+   pintos document 3.5.1. */
+static bool 
+argument_passing (const char *cmd_line, void **esp)
 {
   char* p_ustack_top = *esp;
 
@@ -584,41 +576,44 @@ argument_passing (char *file_name, void **esp)
   char* word_begin;
   char* word_end;
   size_t word_len;
-
-  curr = file_name + strlen (file_name);
-  while (curr >= file_name) 
+  curr = cmd_line + strlen (cmd_line);
+  while (curr >= cmd_line) 
   {
     /* skip delimiters between words */
-    while (curr >= file_name && (strrchr (delimiters, *curr) != NULL || *curr == '\0')) 
+    while (curr >= cmd_line &&
+           (strrchr (delimiters, *curr) != NULL || *curr == '\0')) 
       curr--;
     word_end = curr + 1;
 
     /* skip NON-delimiters in a word */
-    while (curr >= file_name && strrchr (delimiters, *curr) == NULL) 
+    while (curr >= cmd_line && strrchr (delimiters, *curr) == NULL) 
       curr--;
     word_begin = curr + 1;
 
+    /* copy one argument word */
     word_len = word_end - word_begin;
-
+    if ((int)*esp - (int)p_ustack_top + word_len + 1 >= PGSIZE)
+      return false;
     strlcpy (p_ustack_top - word_len - 1, word_begin, word_len + 1);
     *(p_ustack_top - 1) = '\0';
     p_ustack_top -= (word_len + 1);
   }
 
-  char* p_argv_begin = p_ustack_top;
-
   /* round to nearest multiples of 4 */
+  char* p_argv_begin = p_ustack_top;
   int count_limit;
   if (((int)p_ustack_top) % 4 == 3) count_limit = 1; else count_limit = 2;
   while (count_limit > 0) 
   {
     p_ustack_top--;
+    if ((int)*esp - (int)p_ustack_top >= PGSIZE)
+      return false;
     *p_ustack_top = 0;
     if (((int)p_ustack_top) % 4 == 0) 
        count_limit--;
   }
 
-  /* write argv[argc-1 ... 0] */
+  /* push argv[argc-1 ... 0] */
   char *p = PHYS_BASE - 1;
   int argc = 0;
   while (p >= p_argv_begin) 
@@ -627,27 +622,57 @@ argument_passing (char *file_name, void **esp)
     while (p >= p_argv_begin && *p != '\0') 
       p--;
 
-    p_ustack_top -= 4;
-    *(int*)p_ustack_top = (p + 1);
+    if (!push_4byte (&p_ustack_top, (void*)(p + 1), esp))
+      return false;
     argc++;
   }
 
   /* Push argv */
-  p_ustack_top -= 4;
-  *(int*)p_ustack_top = p_ustack_top + 4;
+  if (!push_4byte (&p_ustack_top, (void*)(p_ustack_top), esp))
+    return false;
   
 
   /* Push argc */
-  p_ustack_top -= 4;
-  *(int*)p_ustack_top = argc;
+  if (!push_4byte (&p_ustack_top, (void*)(argc), esp))
+    return false;
   
 
   /* Push fake return address */
-  p_ustack_top -= 4;
-  *(int*)p_ustack_top = NULL;
+  if (!push_4byte (&p_ustack_top, NULL, esp))
+    return false;
  
 
   /* Update stack pointer */
   *esp = p_ustack_top;
+
+  return true;
 }
+
+/* push 4 bytes of data on top of stack at *p_stack, adding safety check
+   to ensure the push does not overflow stack page */
+static bool
+push_4byte (char** p_stack, void* val, void** esp)
+{
+  if ((int)*esp - (int)*p_stack + 4 >= PGSIZE)
+    return false;
+
+  *p_stack -= 4;
+  *(void**)*p_stack = val;
+
+  return true;
+}
+
+/* separates the program file name from command line input 
+   here the program file name is simply the first token within the 
+   command line string */
+static void
+get_prog_file_name (const char* cmd_line, char* prog_file_name)
+{
+  char *first_space = strchr (cmd_line, ' ');
+  if (first_space != NULL)
+      strlcpy (prog_file_name, cmd_line, first_space - cmd_line + 1);
+  else
+      strlcpy (prog_file_name, cmd_line, strlen (cmd_line) + 1);
+}
+
 /* yinfeng ******************************************************************/
