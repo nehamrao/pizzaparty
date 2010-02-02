@@ -77,14 +77,16 @@ start_process (void *file_name_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
 
+  /* notify parent success loading of program files by child process */
   /* protect filesys operations */
   lock_acquire (&glb_lock_filesys);
   success = load (file_name, &if_.eip, &if_.esp);
+  struct thread* t = thread_current ();
+  t->parent_thread->child_load_success = success;
   lock_release (&glb_lock_filesys);
 
-  /* notify parent success loading of program files by child process */
-  struct thread* t = thread_current ();
-  t->parent_thread->child_load_success = success;   //****BUG HERE****//
+//  struct thread* t = thread_current ();
+//  t->parent_thread->child_load_success = success;   //****BUG HERE****//
   sema_up (&t->parent_thread->sema_load);
 
   /* If load failed, quit. */
@@ -136,7 +138,7 @@ process_wait (tid_t child_tid)
         child_info->already_waited = true;	
         if (!child_info->is_alive)	     /* If not alive, return status */
           return child_info->exit_status;        
-        sema_down (&child_info->thread->sema_wait); /****** BUG HERE*/
+        sema_down (&cur->sema_wait);
         return child_info->exit_status;
       }
     }
@@ -173,9 +175,8 @@ process_exit (void)
   {
     printf ("%s: exit(%d)\n", thread_name(), cur->info->exit_status);
     cur->info->is_alive = false;
-  } 
-  if ((cur->sema_wait.value == 0) && (cur->tid > 2))	//****BUG HERE
-    sema_up (&cur->sema_wait);
+    sema_up (&cur->parent_thread->sema_wait);
+  }
 /* chunyan *******************************************************************/
 
 }
