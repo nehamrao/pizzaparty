@@ -190,7 +190,6 @@ process_exit (void)
   {
     printf ("%s: exit(%d)\n", thread_name(), cur->info->exit_status);
     cur->info->is_alive = false;
-    if ((cur->sema_wait.value == 0) && (cur->tid > 2))
     sema_up (&cur->parent_thread->sema_wait);
   }
 /* chunyan *******************************************************************/
