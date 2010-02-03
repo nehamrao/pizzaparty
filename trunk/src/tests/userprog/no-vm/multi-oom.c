@@ -108,7 +108,6 @@ main (int argc, char *argv[])
   int n;
 
   n = argc > 1 ? atoi (argv[1]) : 0;
-  printf("argc = %ld, argv = %lx, n = %ld\n", argc, argv, n);
   bool is_at_root = (n == 0);
   if (is_at_root)
     msg ("begin");
@@ -141,7 +140,7 @@ main (int argc, char *argv[])
           /* If spawning this child failed, so should
              the next spawn_child below. */
         }
-      if (n >= 59) printf(" n = %ld\n", n);
+//      if (n >= 59) printf(" n = %ld\n", n);
       /* Now spawn the child that will recurse. */
       child_pid = spawn_child (n + 1, RECURSE);
 
@@ -162,7 +161,7 @@ main (int argc, char *argv[])
       else if (expected_depth != reached_depth)
         fail ("after run %d/%d, expected depth %d, actual depth %d.",
               i, howmany, expected_depth, reached_depth);
-      printf ("--------------------%ld------------\n", n);
+//      printf ("--------------------%ld------------\n", n);
       ASSERT (expected_depth == reached_depth);
     }
 
