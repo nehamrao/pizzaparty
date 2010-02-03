@@ -133,8 +133,9 @@ process_wait (tid_t child_tid)
           return -1;
         child_info->already_waited = true;	
         if (!child_info->is_alive)	     /* If not alive, return status */
-          return child_info->exit_status;        
-        sema_down (&cur->sema_wait);
+          return child_info->exit_status;
+        else
+          sema_down (&child_info->thread->sema_wait);
         return child_info->exit_status;
       }
     }
@@ -166,12 +167,12 @@ process_exit (void)
     file_close (cur->running_file);
 
 /* chunyan *******************************************************************/
-  if (cur->tid != 2) 	/***** REVISE HERE***/
+  if (cur->tid > 2) 	/***** REVISE HERE***/
   {
     printf ("%s: exit(%d)\n", thread_name(), cur->info->exit_status);
     cur->info->is_alive = false;
     free_info ();
-    sema_up (&cur->parent_thread->sema_wait);
+    sema_up (&cur->sema_wait);
   }
 /* chunyan *******************************************************************/
 
