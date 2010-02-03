@@ -130,6 +130,7 @@ struct lock glb_lock_filesys;
    after the process has exited. */
 struct info
   {
+    struct thread *thread;
     bool already_waited;		/* Whether the process has already been 
 					   waited by its parent*/
     bool parent_dead;

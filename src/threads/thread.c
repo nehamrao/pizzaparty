@@ -504,6 +504,7 @@ init_info (struct thread *t, tid_t tid)
     thread_exit();
 
   t->info = info;
+  info->thread = t;
   info->tid = tid;
   info->already_waited = false;
   info->is_alive = true;
