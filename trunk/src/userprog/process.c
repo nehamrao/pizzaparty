@@ -163,10 +163,7 @@ process_exit (void)
   }
 
   if (cur->running_file != NULL)
-  {
-    file_allow_write (cur-> running_file); 
     file_close (cur->running_file);
-  }
 
 /* chunyan *******************************************************************/
   if (cur->tid != 2) 	/***** REVISE HERE***/
