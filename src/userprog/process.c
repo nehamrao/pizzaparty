@@ -158,6 +158,7 @@ process_exit (void)
         {
           /* close all files */
           file_close (cur->array_files[fd]->p_file);
+          free (cur->array_files[fd]);
         }    
   }
 
