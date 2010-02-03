@@ -485,10 +485,10 @@ init_thread (struct thread *t, const char *name, int priority)
   t->child_load_success = true;
   int i = 0;
   for (i = 0; i < 128; i++)
-      t->array_files[i] = NULL;  //***JACK, mallock?
+      t->array_files[i] = NULL;  //***JACK, malloc?
   lock_init (&t->lock_array_files);
-//  lock_init (&glb_lock_filesys); //***BUG HERE***//
   list_init (&t->child_list);
+  t->running_file = NULL;
 /* chunyan *******************************************************************/
 
 }
@@ -504,10 +504,10 @@ init_info (struct thread *t, tid_t tid)
     thread_exit();
 
   t->info = info;
-  info->thread = t;
   info->tid = tid;
   info->already_waited = false;
   info->is_alive = true;
+  info->parent_dead = false;
   info->exit_status = 0;
   
   if (t == initial_thread) return;
