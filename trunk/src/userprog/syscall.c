@@ -162,6 +162,9 @@ _exec (const char *cmd_line)
   /* begin executing */
   pid_t pid = (pid_t) process_execute (cmd_line);
 
+  if (pid == -1) 
+    return -1;
+
   /* wait to receive message about child loading success */
   struct thread* t = thread_current ();
   sema_down (&t->sema_load);

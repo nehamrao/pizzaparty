@@ -24,6 +24,7 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
 static bool argument_passing (const char *cmd_line, void **esp);
 static bool push_4byte (char** p_stack, void* val, void** esp);
 static void get_prog_file_name (const char* cmd_line, char* prog_file_name);
+void free_info ();
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -73,22 +74,21 @@ start_process (void *file_name_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
 
+/* chunyan *******************************************************************/
   /* notify parent success loading of program files by child process */
   /* protect filesys operations */
   lock_acquire (&glb_lock_filesys);
   success = load (file_name, &if_.eip, &if_.esp);
+//  printf("success = %ld\n", success); //test
   struct thread* t = thread_current ();
   t->parent_thread->child_load_success = success;
   lock_release (&glb_lock_filesys);
 
-//  struct thread* t = thread_current ();
-//  t->parent_thread->child_load_success = success;   //****BUG HERE****//
   sema_up (&t->parent_thread->sema_load);
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
   if (!success) 
-/* chunyan *******************************************************************/
     { 
       t->info->exit_status = -1;
       thread_exit ();
@@ -150,20 +150,32 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
   
-  int fd = -1;
-  for(fd=2;fd<128;fd++)
+  int fd;
+  for (fd = 2;fd < 128; fd ++)
   {
 
       if (cur->array_files[fd] != NULL)
         {
-          /* add file */
-          file_close(cur->array_files[fd]->p_file);
-        }
-    
+          /* close all files */
+          file_close (cur->array_files[fd]->p_file);
+        }    
   }
-   if(cur->running_file != NULL)
-   file_close(cur->running_file);
 
+  if (cur->running_file != NULL)
+  {
+    file_allow_write (cur-> running_file); 
+    file_close (cur->running_file);
+  }
+
+/* chunyan *******************************************************************/
+  if (cur->tid != 2) 	/***** REVISE HERE***/
+  {
+    printf ("%s: exit(%d)\n", thread_name(), cur->info->exit_status);
+    cur->info->is_alive = false;
+    free_info ();
+    sema_up (&cur->parent_thread->sema_wait);
+  }
+/* chunyan *******************************************************************/
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -181,15 +193,6 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
-/* chunyan *******************************************************************/
-  if (cur->tid != 2) 	/***** REVISE HERE***/
-  {
-    printf ("%s: exit(%d)\n", thread_name(), cur->info->exit_status);
-    cur->info->is_alive = false;
-    sema_up (&cur->parent_thread->sema_wait);
-  }
-/* chunyan *******************************************************************/
-
 }
 
 /* Sets up the CPU for running user code in the current
@@ -313,10 +316,8 @@ load (const char *cmd_line, void (**eip) (void), void **esp)
       printf ("load: %s: open failed\n", prog_file_name);
       goto done; 
     }
-  
      
   file_deny_write (file);
-  t->running_file = file;
 
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
@@ -401,14 +402,14 @@ load (const char *cmd_line, void (**eip) (void), void **esp)
   if (!argument_passing (cmd_line, esp))
     goto done;
   
+  t->running_file = file;
   success = true;
-
-  return success;  
+  return success;  // ********************************************???
 
  done:
   /* We arrive here whether the load is successful or not. */
-  if(file != NULL)
-  file_close (file);
+//  if (file != NULL)
+//    file_close (file);
   return success;
 }
 
@@ -673,6 +674,27 @@ get_prog_file_name (const char* cmd_line, char* prog_file_name)
       strlcpy (prog_file_name, cmd_line, first_space - cmd_line + 1);
   else
       strlcpy (prog_file_name, cmd_line, strlen (cmd_line) + 1);
+}
+
+void 
+free_info ()
+{
+  struct thread *cur = thread_current ();
+  struct list_elem *elem; 
+  struct info *child_info;
+  elem = list_begin (&cur->child_list);
+  while (elem != list_end (&cur->child_list))
+  {
+    child_info = list_entry (elem, struct info, elem);
+    elem = list_next (elem);
+    if (child_info->is_alive == false)
+      free (child_info);
+    else 
+      child_info->parent_dead = true;
+  }
+  if (cur->info->parent_dead)
+    free (cur->info);    
+  return;
 }
 
 /* yinfeng ******************************************************************/
