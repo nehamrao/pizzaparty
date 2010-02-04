@@ -139,6 +139,16 @@ This way file descritpors are unique just within a single process.
 >> loading.  How does your code ensure this?  How is the load
 >> success/failure status passed back to the thread that calls "exec"?
 
+Basically we add two member varialbes to struct thread to ensure this. 
+One is a bool variable child_load_success indicating the load()
+success/failure. child_load_success is updated every time start_process() 
+calls load(), and the parent process calling exec() can read it to get the 
+information. The other is semaphore sema_load initialized with value 0, and 
+by calling sema_down() in the parent process before reading the 
+bool variable and calling sema_up() in the child process after load() 
+completes, we can ensure the parent process returns only after the child 
+process has finished load().
+
 >> B8: Consider parent process P with child process C.  How do you
 >> ensure proper synchronization and avoid race conditions when P
 >> calls wait(C) before C exits?  After C exits?  How do you ensure
@@ -177,6 +187,8 @@ descriptor as index in the array.
 
 >> B11: The default tid_t to pid_t mapping is the identity mapping.
 >> If you changed it, what advantages are there to your approach?
+
+We stick to the default implementation.
 
 			   SURVEY QUESTIONS
 			   ================
