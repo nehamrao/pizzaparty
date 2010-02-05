@@ -1,5 +1,6 @@
 #include "userprog/syscall.h"
 #include <stdio.h>
+#include <string.h>
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
@@ -10,6 +11,7 @@
 #include "filesys/file.h"
 #include "filesys/filesys.h"
 #include "userprog/process.h"
+#include "userprog/pagedir.h"
 
 static void syscall_handler (struct intr_frame *);
 
@@ -361,10 +363,8 @@ _seek (int fd, unsigned position)
       kill_process ();
     }
 
-  if (position < 0) 
-    position = 0;
-  if (position > _filesize (fd)) 
-    position = _filesize (fd);
+  if (position > (unsigned)_filesize (fd)) 
+    position = (unsigned)_filesize (fd);
 
   /* Seek to desired position */
   struct thread* t = thread_current ();
@@ -463,11 +463,11 @@ checkvaddr(const void * vaddr, unsigned size)
   /* Check if every page is mapped */
   for (pcheck = pg_round_down (vaddr); 
        pcheck <= pg_round_down (vaddr + size);)
-       {
-         if (!pagedir_get_page (t->pagedir, pcheck))
-           return false;
-         pcheck += PGSIZE;      
-       } 
+    {
+      if (!pagedir_get_page (t->pagedir, pcheck))
+        return false;
+      pcheck += PGSIZE;      
+    } 
   return true;
 }
 
