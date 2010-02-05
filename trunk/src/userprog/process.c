@@ -24,7 +24,7 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
 static bool argument_passing (const char *cmd_line, void **esp);
 static bool push_4byte (char** p_stack, void* val, void** esp);
 static void get_prog_file_name (const char* cmd_line, char* prog_file_name);
-static void free_info ();
+static void free_process_info ();
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -43,19 +43,17 @@ process_execute (const char *cmd_line)
     return TID_ERROR;
   strlcpy (fn_copy, cmd_line, PGSIZE);
 
-/* yinfeng *******************************************************************/
-  /* separate program file_name from following arguments
-     and only send this program file_name to thread_create, 
-     16 is the same length with that in struct thread */
+  /* Separate file name from other following arguments
+     and pass this file_name to thread_create.  
+     We set a 16 maximum length on file_name*/
   char prog_file_name[16];
   get_prog_file_name (fn_copy, prog_file_name);
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (prog_file_name, PRI_DEFAULT, start_process, fn_copy);
-/* yinfeng *******************************************************************/
+
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy);
-
   return tid;
 }
 
@@ -74,16 +72,14 @@ start_process (void *file_name_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
 
-/* chunyan *******************************************************************/
-  /* notify parent success loading of program files by child process */
-  /* protect filesys operations */
+  /* Notify parent process if loading of child process is successful */
+  /* Protect filesys operations */
   lock_acquire (&glb_lock_filesys);
   success = load (file_name, &if_.eip, &if_.esp);
   struct thread* t = thread_current ();
   t->parent_thread->process_info->child_load_success = success;
-  lock_release (&glb_lock_filesys);
-
   sema_up (&t->parent_thread->process_info->sema_load);
+  lock_release (&glb_lock_filesys);
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
@@ -92,7 +88,6 @@ start_process (void *file_name_)
       t->process_info->exit_status = -1;
       thread_exit ();
     }
-/* chunyan *******************************************************************/
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -116,12 +111,11 @@ start_process (void *file_name_)
 int
 process_wait (int child_pid) 
 {
-  /* chunyan *******************************************************************/
   struct thread *cur = thread_current ();
   struct list_elem *elem; 
   struct process_info *child_info;
 
-  /* Scan the childlist, looking for the one that matches tid */
+  /* Scan the child_list, and look for the one that matches tid */
   for (elem = list_begin (&cur->child_list); elem != list_end (&cur->child_list);
     elem = list_next (elem))
     {  
@@ -134,16 +128,14 @@ process_wait (int child_pid)
         if (!child_info->is_alive)	     /* If not alive, return status */
           return child_info->exit_status;
         else
-          sema_down (&child_info->sema_wait);
+          sema_down (&child_info->sema_wait);/* Down the wait sema */
         return child_info->exit_status;
       }
     }
-  
-/* chunyan *******************************************************************/
   return -1;
 }
 
-/* Free the current process's resources. */
+/* Exit process and free its resources. */
 void
 process_exit (void)
 {
@@ -155,22 +147,23 @@ process_exit (void)
   {
       if (cur->array_files[fd] != NULL)
         {
-          /* close all files and free their resources */
+          /* Close all files and free their resources */
           file_close (cur->array_files[fd]->p_file);
           free (cur->array_files[fd]);
         }    
   }
+  /* Close executable and enable write */
   file_close (cur->executable);
 
-/* chunyan *******************************************************************/
+  /* If not kernel thread, print the exit message, update process metadata 
+     and free resources */
   if (!cur->is_kernel)
   {
     printf ("%s: exit(%d)\n", thread_name(), cur->process_info->exit_status);
     cur->process_info->is_alive = false;
-    free_info ();
     sema_up (&cur->process_info->sema_wait);
+    free_process_info ();
   }
-/* chunyan *******************************************************************/
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -295,23 +288,20 @@ load (const char *cmd_line, void (**eip) (void), void **esp)
     goto done;
   process_activate ();
 
-  /* Open executable file. */
-/* yinfeng *******************************************************************/
-  /* separate program file_name from following arguments
-     and only send this program file_name to thread_create, 
-     16 is the same length with that in struct thread */
+  /* Separate program file name from following arguments. */
   char prog_file_name[16];
   get_prog_file_name (cmd_line, prog_file_name);
 
+  /* Open executable file. */
   file = filesys_open (prog_file_name);
-/* yinfeng *******************************************************************/
 
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", prog_file_name);
       goto done; 
     }
-     
+  
+  /* Deny write to executable. */
   file_deny_write (file);
 
   /* Read and verify executable header. */
@@ -393,12 +383,12 @@ load (const char *cmd_line, void (**eip) (void), void **esp)
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
 
-  /* conduct argument passing here */
+  /* Do argument passing. */
   if (!argument_passing (cmd_line, esp))
     goto done;
   
   t->executable = file;
-  return true;
+  success = true;
 
  done:
   /* We arrive here whether the load is successful or not. */
@@ -553,80 +543,90 @@ install_page (void *upage, void *kpage, bool writable)
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
 
-/* yinfeng ******************************************************************/
-/* parse cmd_line, separate program file name and following arguments
-   push argv content, word-alignment, then argv pointers and argc, and 
-   finally fake return address in reverse order exactly as illustrated in 
-   pintos document 3.5.1. */
+/* Parse cmd_line, separate program file name and following arguments.
+   Push argv, word-alignment,argv pointers, argc, and finally fake return 
+   address in reverse order to the user stack */
 static bool 
 argument_passing (const char *cmd_line, void **esp)
 {
+  /* Stack top */
   char* p_ustack_top = *esp;
 
-  /* scan through fn_copy in reverse order and copy to argv */
+  /* Scan through fn_copy in reverse order and copy to argv */
   char* delimiters = " ";
-  char* curr;
-  char* word_begin;
-  char* word_end;
-  size_t word_len;
-  curr = cmd_line + strlen (cmd_line);
+  char* curr;			/* Current position pointer in the string */
+  char* word_begin;		/* Begin position pointer for an argument */
+  char* word_end;		/* End position pointer for an argument */
+  size_t word_len;		/* Argument word length */
+
+  curr = cmd_line + strlen (cmd_line);	/* Seek to the end of the string */
   while (curr >= cmd_line) 
   {
-    /* skip delimiters between words */
+    /* Skip delimiters between words */
     while (curr >= cmd_line &&
            (strrchr (delimiters, *curr) != NULL || *curr == '\0')) 
       curr--;
-    word_end = curr + 1;
+    word_end = curr + 1;	/* Find the end position of an argument */
 
-    /* skip NON-delimiters in a word */
+    /* Skip NON-delimiters in a word */
     while (curr >= cmd_line && strrchr (delimiters, *curr) == NULL) 
       curr--;
-    word_begin = curr + 1;
+    word_begin = curr + 1;	/* Find the begin position of an argument */
 
-    /* copy one argument word */
+    /* Push the argument word to stack */
     word_len = word_end - word_begin;
-    if ((int)*esp - (int)p_ustack_top + word_len + 1 >= PGSIZE)
+
+      /* Check if stack will overflow */
+    if ((int)*esp - (int)p_ustack_top + word_len + 1 > PGSIZE)
       return false;
     strlcpy (p_ustack_top - word_len - 1, word_begin, word_len + 1);
     *(p_ustack_top - 1) = '\0';
+
+    /* Update stack top pointer */
     p_ustack_top -= (word_len + 1);
   }
 
-  /* round to nearest multiples of 4 */
-  char* p_argv_begin = p_ustack_top;
-  int count_limit;
+  /* Round stack top to nearest multiples of 4 */
+  char* p_argv_begin = p_ustack_top;	/* Record stack top, for later use of 
+					   calculating argv addresses. */
+  int count_limit;		/* Word-align auxiliary variable, = 1 if do not
+			     	   need word-align, and = 2 otherwise */
+
+  /* Push word-align into the stack */
   if (((int)p_ustack_top) % 4 == 3) count_limit = 1; else count_limit = 2;
   while (count_limit > 0) 
   {
-    p_ustack_top--;
-    if ((int)*esp - (int)p_ustack_top >= PGSIZE)
+    if ((int)*esp - (int)p_ustack_top + 1 > PGSIZE)
       return false;
+
+    p_ustack_top--;
     *p_ustack_top = 0;
+
     if (((int)p_ustack_top) % 4 == 0) 
        count_limit--;
   }
 
-  /* push argv[argc-1 ... 0] */
-  char *p = PHYS_BASE - 1;
+  /* Push argv[argc-1 ... 0] into the stack */
+  char *p = PHYS_BASE - 1;	/* Scan the stack for argument addresses. */
   int argc = 0;
   while (p >= p_argv_begin) 
   {
     p--;
-    while (p >= p_argv_begin && *p != '\0') 
+    while ((p >= p_argv_begin) && (*p != '\0')) 
       p--;
 
-    if (!push_4byte (&p_ustack_top, (void*)(p + 1), esp))
+    if (!push_4byte (&p_ustack_top, (void *)(p + 1), esp))
       return false;
     argc++;
   }
 
   /* Push argv */
-  if (!push_4byte (&p_ustack_top, (void*)(p_ustack_top), esp))
+  if (!push_4byte (&p_ustack_top, (void *)(p_ustack_top), esp))
     return false;
   
 
   /* Push argc */
-  if (!push_4byte (&p_ustack_top, (void*)(argc), esp))
+  if (!push_4byte (&p_ustack_top, (void *)(argc), esp))
     return false;
   
 
@@ -641,22 +641,22 @@ argument_passing (const char *cmd_line, void **esp)
   return true;
 }
 
-/* push 4 bytes of data on top of stack at *p_stack, adding safety check
+/* Push 4 bytes of data on top of stack at *p_stack, adding safety check
    to ensure the push does not overflow stack page */
 static bool
 push_4byte (char** p_stack, void* val, void** esp)
 {
-  if ((int)*esp - (int)*p_stack + 4 >= PGSIZE)
+  if ((int)*esp - (int)*p_stack + 4 > PGSIZE)
     return false;
 
   *p_stack -= 4;
-  *(void**)*p_stack = val;
+  *(void **)*p_stack = val;
 
   return true;
 }
 
-/* separates the program file name from command line input 
-   here the program file name is simply the first token within the 
+/* Separates the program file name from command line input. 
+   Here the program file name is simply the first "argument" within the 
    command line string */
 static void
 get_prog_file_name (const char* cmd_line, char* prog_file_name)
@@ -668,25 +668,39 @@ get_prog_file_name (const char* cmd_line, char* prog_file_name)
       strlcpy (prog_file_name, cmd_line, strlen (cmd_line) + 1);
 }
 
-static void 
-free_info ()
+/* Free process metadata resources.
+   Process metadata is to be preserved for inspection by its parent process, 
+   after this process terminates. So we only free current process's metadata
+   if its parent process is not alive. 
+   Furthermore, we also need to free all the dead child processes' metadata, 
+   and informing its living child process that its parent is dead, so when 
+   the child process exits, it will free its process metadata. In this way, 
+   we can avoid memory leakage problem */
+static void
+free_process_info ()
 {
   struct thread *cur = thread_current ();
   struct list_elem *elem; 
   struct process_info *child_info;
+
+  /* Scan the child_list */
   elem = list_begin (&cur->child_list);
   while (elem != list_end (&cur->child_list))
   {
     child_info = list_entry (elem, struct process_info, elem);
     elem = list_next (elem);
+
+    /* If child is alive, inform it that its parent process is dead, 
+       otherwise, free its metadata. */
     if (child_info->is_alive == false)
       free (child_info);
     else 
       child_info->parent_alive = false;
   }
+
+  /* Free its own metadata if its parent process is dead */
   if (!cur->process_info->parent_alive)
-    free (cur->process_info);    
+    free (cur->process_info);
   return;
 }
 
-/* yinfeng ******************************************************************/

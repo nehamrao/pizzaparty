@@ -36,11 +36,11 @@ static bool is_user_fd (int fd);
    just a read with give offset, and stack pointer is not changed */
 static uint32_t read_stack (struct intr_frame *f, int offset);
 
-/* add a file into array_files of a thread 
+/* Add a file into array_files of a thread 
    and allocate a file descriptor on the way*/
 static int add_file (struct thread* t, struct file_info* f_info);
 
-/* kill a process and exit with status -1 */
+/* Kill a process and exit with status -1 */
 static void kill_process (void);
 
 
@@ -53,10 +53,10 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f) 
 {
-  /* get syscall number */
+  /* Get syscall number */
   int syscall_no = (int)(read_stack (f, 0));
 
-  /* dispatch to individual calls */
+  /* Dispatch to individual calls */
   uint32_t arg1, arg2, arg3;
   switch (syscall_no)
     {
@@ -135,8 +135,6 @@ syscall_handler (struct intr_frame *f)
         break;
     }
 }
-
-
 
 static void
 _halt (void)
