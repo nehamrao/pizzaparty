@@ -5,7 +5,6 @@
 #include "threads/thread.h"
 #include "threads/malloc.h"
 #include "threads/vaddr.h"
-#include "threads/init.h"
 #include "devices/shutdown.h"
 #include "devices/input.h"
 #include "filesys/file.h"
@@ -28,7 +27,7 @@ static int _write (int fd, const void *buffer, unsigned size);
 static void _seek (int fd, unsigned position);
 static unsigned _tell (int fd);
 static void _close (int fd);
-static bool checkvaddr(const void * vaddr);
+static bool checkvaddr(const void * vaddr, unsigned size);
 
 /* static methods providing utility functions to above methods */
 
@@ -156,7 +155,7 @@ static pid_t
 _exec (const char *cmd_line)
 {
   /* check address */
-  if (!checkvaddr (cmd_line))
+  if (!checkvaddr (cmd_line, 0))
       kill_process();
 
   /* begin executing */
@@ -185,10 +184,11 @@ static bool
 _create (const char *file, unsigned initial_size)
 {
   /* check address */
-  if (!checkvaddr (file))
+  if (!checkvaddr (file, 0))
     {
       kill_process();
     }
+
 
   /* protected filesys operation: create file */
   lock_acquire (&glb_lock_filesys);
@@ -202,7 +202,7 @@ static bool
 _remove (const char *file)
 {
   /* check address */
-  if (!checkvaddr (file))
+  if (!checkvaddr (file, 0))
     {
       kill_process();
     }
@@ -219,7 +219,7 @@ static int
 _open (const char *file)
 {
   /* check address */
-  if (!checkvaddr (file))
+  if (!checkvaddr (file, 0))
     {
       kill_process();
     }
@@ -278,7 +278,7 @@ static int
 _read (int fd, void *buffer, unsigned size)
 {
   /* check address */
-  if (!checkvaddr (buffer))
+  if (!checkvaddr (buffer, size))
     {
       kill_process();
     }
@@ -336,7 +336,7 @@ static int
 _write (int fd, const void *buffer, unsigned size)
 {
   /* check address */
-  if (!checkvaddr (buffer))
+  if (!checkvaddr (buffer, size))
     {
       kill_process();
     }
@@ -461,7 +461,7 @@ static uint32_t
 read_stack (struct intr_frame *f, int offset)
 {
   /* check address */
-  if (!checkvaddr (f->esp + offset))
+  if (!checkvaddr (f->esp + offset, 0))
       kill_process();
 
   return *(uint32_t *)(f->esp + offset);
@@ -495,19 +495,21 @@ add_file (struct thread* t, struct file_info* f_info)
 
 
 static bool
-checkvaddr(const void * vaddr)
+checkvaddr(const void * vaddr, unsigned size)
 {
-  uint32_t *pt, *pde;
-  uint32_t *pd;
-  struct thread *t = thread_current ();
-  pd = t->pagedir;
+  uint32_t *pcheck;
 
-  if (!is_user_vaddr (vaddr)) 
-    return false;
- 
-  if (pagedir_get_page (t->pagedir, vaddr))
+  struct thread *t = thread_current ();
+
+  for (pcheck = pg_round_down(vaddr); pcheck <= pg_round_down(vaddr+size);)
+  {
+    if (!is_user_vaddr (pcheck)) 
+      return false;
+    if (!pagedir_get_page (t->pagedir, pcheck))
+      return false;
+    pcheck += PGSIZE;      
+  } 
     return true;
-  return pagedir_get_page (init_page_dir, vaddr);
 }
 
 
