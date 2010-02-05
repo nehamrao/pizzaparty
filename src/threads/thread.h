@@ -103,7 +103,7 @@ struct thread
     struct file_info *array_files[128]; /* Array of open files */
     struct file *executable;		/* Record current process's executable*/
     struct list child_list;		/* Record thread's children */
-    struct process_info *process_info;		/* Process metadata */
+    struct process_info *process_info;  /* Process metadata */
 #endif
 
     /* Owned by thread.c. */

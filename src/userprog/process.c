@@ -18,13 +18,14 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "threads/pte.h"
+#include "threads/malloc.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 static bool argument_passing (const char *cmd_line, void **esp);
 static bool push_4byte (char** p_stack, void* val, void** esp);
 static void get_prog_file_name (const char* cmd_line, char* prog_file_name);
-static void free_process_info ();
+static void free_process_info (void);
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -157,7 +158,7 @@ process_exit (void)
 
   /* If not kernel thread, print the exit message, update process metadata 
      and free resources */
-  if (!cur->is_kernel)
+  if (!(cur->is_kernel))
   {
     printf ("%s: exit(%d)\n", thread_name(), cur->process_info->exit_status);
     cur->process_info->is_alive = false;
@@ -677,7 +678,7 @@ get_prog_file_name (const char* cmd_line, char* prog_file_name)
    the child process exits, it will free its process metadata. In this way, 
    we can avoid memory leakage problem */
 static void
-free_process_info ()
+free_process_info (void)
 {
   struct thread *cur = thread_current ();
   struct list_elem *elem; 
