@@ -111,7 +111,6 @@ struct thread
     unsigned magic;                     /* Detects stack overflow. */
   };
 
-/* yinfeng *******************************************************************/
 /* structure to record relevant file information */
 struct file_info
   {
@@ -121,7 +120,8 @@ struct file_info
 /* global lock on function call to filesys.h and file.h */
 struct lock glb_lock_filesys;
 
-/* Metadata for process, which could be retrieved after the process exits. */
+/* Metadata for process, which could be retrieved by parent process even
+   after the process exits. */
 struct info
   {
     struct semaphore sema_load;   	/* Sema to ensure load order */
@@ -131,12 +131,12 @@ struct info
     bool already_waited;		/* Whether the process has already been 
 					   waited by its parent */
     bool parent_alive;			/* Whether the parent process is alive*/
-    bool is_alive;			/* Whether the process is running */
+    bool is_alive;			/* Whether the process is alive */
     int exit_status;			/* Record exit status */
     int pid;				/* Record the pid */
-    struct list_elem elem;		/* For parent thread's child_list */
+    struct list_elem elem;		/* Element in child_list of its parent 
+					   thread */
   };
-/* chunyan *******************************************************************/
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
