@@ -34,16 +34,24 @@ We did not rely on new struct, global of static varialbes here to implement
 argument passing. However, we do design separate functions for the task,
 they are in process.c:
 
-/* parse cmd_line, separate program file name and following arguments
-   and push to stack exactly as illustrated in pintos document 3.5.1. */
-static bool argument_passing (const char *cmd_line, void **esp);
-
 /* push 4 bytes of data on top of stack at *p_stack, adding safety check
    to ensure the push does not overflow stack page */
 static bool push_4byte (char** p_stack, void* val, void** esp);
 
-/* separates the program file name from command line  */
+/* separates the program file name from command line  */  
 static void get_prog_file_name (const char* cmd_line, char* prog_file_name);
+
+/* parse cmd_line, separate program file name and following arguments
+   and push to stack exactly as illustrated in pintos document 3.5.1. */
+static bool argument_passing (const char *cmd_line, void **esp)
+{
+  char* p_ustack_top = *esp; // Pointer to the top of stack for push  
+  char* delimiters = " ";    // 
+  char* curr;     // Pointer used to scan from the end to the begin 
+  char* word_begin; // Pointer to record the start of each word
+  char* word_end;  // Pointer to record the end of each word
+  size_t word_len; // The length of each parsed word
+}
 
 
 ---- ALGORITHMS ----
@@ -52,32 +60,65 @@ static void get_prog_file_name (const char* cmd_line, char* prog_file_name);
 >> you arrange for the elements of argv[] to be in the right order?
 >> How do you avoid overflowing the stack page?
 
-We scan in reverse direction (from right to left) to find each argument 
-within the input command line, and for each argument encountered, we push it 
-on top of user stack beginning from PHYS_BASE - 1; after successfully pushing
-all arguments and performing word-alignment, we then scan from PHYS_BASE - 1 
-to find the beginning address of each argument, and push it on stack. This
-way, when we want to get arguments back, we can just using pop operation to 
-ensure the right order of arguments.
+To implement argument parsing, we first scan in reverse direction (from right
+to left) to find each argument within the input command line using pointer 
+char *curr, and for each argument encountered, we push it on top of user stack
+beginning from PHYS_BASE - 1; after successfully pushing all arguments,then we
+perform word-alignment for a better accessing speed; after that, we scan from
+PHYS_BASE - 1 to find the beginning address of each argument, and push it on 
+stack. In this way, when we want to get arguments back, we can just using pop 
+operation to ensure the right order of arguments. The elements of argv[] is 
+ensured to be in right order by push the arguments into stack from end to 
+beginning.
 
-We add a utility function push_4byte to push pointers or integers on top of 
-user stack page, and make boundary check to make sure the push does not 
-overflow the stack page. For other push operations used to store argument
-string, we also do similar boundary checks.
+To avoid overflowing the stack page, first, when we push any argument to the 
+stack, we check the argument length is not larger than available space; second,
+we add a utility function push_4byte to push pointers or integers on top of 
+user stack page, and make boundary check to make sure each push of argv 
+address does not overflow the stack page. These kinds of boundary check are 
+implemented every time before we write anything into the stack, so the 
+overflowing is avioded.
+
 
 ---- RATIONALE ----
 
 >> A3: Why does Pintos implement strtok_r() but not strtok()?
 
-strtok() typically uses an internal buffer to store the states (where we 
-are within the string last time) and is thus not thread-safe.
+strtok() typically uses a static pointer to store the states (where we 
+are within the string last time). The static pointer is subjected to potential
+race conditions and is thus not thread-safe.
 
 strtok_r() takes a third arguments to determine the place within the string 
-to go on searching tokens, and thus works in multi-thread systems like Pintos.
+to go on searching tokens. The space to store the states is offered by the 
+caller, and thus works in Pintos.
+
+In our argument passing functions, we also noticed this point to avoid unsafe
+manipulation.
+
 
 >> A4: In Pintos, the kernel separates commands into a executable name
 >> and arguments.  In Unix-like systems, the shell does this
 >> separation.  Identify at least two advantages of the Unix approach.
+
+The first and foremost advantage of Unix approach is that, it is much safer 
+and simpler to use shell-based parsing operations, so any unsafe command line 
+would crash shell rather than kernel directly. While it is true that the 
+kernel would examine the input arguments, but passing unsafe arguments to 
+kernel would incease the complexity of kernel operations, as well as the 
+chance of kernel crash.
+
+In Unix-like systems, the separation between executable name and arguments 
+enables more complex semantics such as redirection, pipeline in shell 
+operations. With Pintos' approach, we would have to add a lot of code in 
+kernel to achieve similar goals, and this violates the laying design principle
+commonly used in computer system.
+
+Combined with PATH environment variable, Unix-like shell gives much 
+flexibility in looking for executable files. Revolving pathname and looking 
+for files tend to be expensive, and it is best left to external programs such 
+as shell to finish the task. With Pintos' approach, the kernel would have to 
+undertake the task to look for a file during the initialization of a process.
+
 
 			     SYSTEM CALLS
 			     ============
@@ -87,6 +128,7 @@ to go on searching tokens, and thus works in multi-thread systems like Pintos.
 >> B1: Copy here the declaration of each new or changed `struct' or
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
+
 
 >> B2: Describe how file descriptors are associated with open files.
 >> Are file descriptors unique within the entire OS or just within a
@@ -99,14 +141,39 @@ as a file descriptor corresponding to the open file stored in this array
 element. When opening a file we search in the array to find a vacancy, store
 the pointer to file_info structure there, and return the index as file 
 descriptor. And when closing a file we can go directly according to file 
-descriptor (index in array) to find the file_info structure and close it.
+descriptor (index in array) to find the file_info structure and close it. This
+way, each process has an independent set of file descriptors, and the file 
+descriptors are not inherited by child processes. In each process, current 
+opened files has a unique id to distinguish from each other, which ensures the
+requirements of the project.
 
-This way file descritpors are unique just within a single process.
+In our implementation, file descritpors are unique to each other just within a
+single process. Different processes may have the same set of id's.
+
 
 ---- ALGORITHMS ----
 
 >> B3: Describe your code for reading and writing user data from the
 >> kernel.
+
+First we check the file descriptor is valid, in the range of 2 to 127 or 
+STDIN_FILENO/STDOUT_FILENO for read()/write() separately.
+
+Next we check the address is valid. For every page in the range of memory that
+can be reached from user supplied address (e.g. from buffer to buffer + size
+in read() and write()), we have to verify that the particular page is mapped.
+
+For read(), if the file descriptor is STDIN_FILENO, we call input_getc() to 
+read from stdin; while for write(), we call putbuf() when the STDOUT_FILENO is
+encountered.
+
+Finally we deal with the typical case where actual file I/O is requested. The
+list of open files recorded in thread structure is queried to find the file 
+structure according to file descriptor. Then this file structure is used to 
+call file system methods file_read_at() or file_write_at() to finish the task.
+Of course, all these file system calls are protected by a global lock to avoid
+race conditions. 
+
 
 >> B4: Suppose a system call causes a full page (4,096 bytes) of data
 >> to be copied from user space into the kernel.  What is the least
@@ -115,8 +182,59 @@ This way file descritpors are unique just within a single process.
 >> for a system call that only copies 2 bytes of data?  Is there room
 >> for improvement in these numbers, and how much?
 
+In our current implementation approach, if a system call causes a full page of
+data to be copied, the greatest possible number of inspection could be 2, and 
+the least number could be 1. We now user pagedir_get_page check each page 
+once. So when the data is in span of two pages, we will check twice, and if 
+the data is only in one page, we only check onece. When it is as to copy 2 
+bytes of data, the situation in our inspections is much the same as copying a
+full page of data. The inspection time largely depends on if the data is in
+span of two pages. If yes, twice, no, then once only.  
+
+A different approach is to not check the address for read and write, but let 
+the operations continue until there is an invalid address happens. This way,
+if the address is valid, then 0 times of inspection is needed. For the reading
+of 2 bytes of data, this would be likely to happen. And if an invalid address 
+happens in this method, the system would write data to the valid portion until
+the invalidation happens. It is clear that writing 2 bytes of data is much 
+faster than calls to pagedir_get_page for inspections. However, the improvement
+of this approach is unstable and under the risk of more burdens to the system,
+more tests would be needed to determine which way is better. In the
+consideration of safety as a whole, we still use the first approach inspecting
+each page in the data span.
+
+
 >> B5: Briefly describe your implementation of the "wait" system call
 >> and how it interacts with process termination.
+
+To implement "wait" system call, we add a struct process_info to record all the
+information such as a process's child list, whether the process is already in 
+wait status, whether a process's parent is alive, whether the process is alive,
+and the exit status of the process.  
+
+Whenever a "wait" system is called, the function implements as in order below:
+
+First, current thread would searching around his child list to find if there 
+is one process of his child matches the given pid to wait. If there is one, 
+the child process's infomation is obtained from the process_info structure. 
+Then, we will exameine if the parent process is already waiting the child, by 
+checking the already_waited information. If the parent has already waited once
+for the child, then is immediately returns -1 as required by the assignment. 
+If the process has not waited this child before, then we set the already_waited
+information as true. Next, before actually waits for the child, we first child
+whether the child is still alive by using the is_alive information in 
+process_info, as it is perfectly normal for a wait system call to be executed
+when the child is already died. This point is important, as an already died 
+child would not have the chance to wake up its parent process, which would 
+leading to the parent wait forever. Note that even though the child may already
+died, its child_info is not freed until both of the parent and child is dead,
+so we are still able to return the died child's exit_status at this time. If 
+the child is not already died, then this is the time to put the parent into 
+wait. We implement this by sema down the semaphore located in children 
+process's child_info. In doing so, we ensured that each sema_up of the 
+children process when it comes to an end would not cause the parent which is 
+waitng for its other child to be waken up.  
+
 
 >> B6: Any access to user program memory at a user-specified address
 >> can fail due to a bad pointer value.  Such accesses must cause the
@@ -131,6 +249,7 @@ This way file descritpors are unique just within a single process.
 >> allocated resources (locks, buffers, etc.) are freed?  In a few
 >> paragraphs, describe the strategy or strategies you adopted for
 >> managing these issues.  Give an example.
+
 
 ---- SYNCHRONIZATION ----
 
@@ -148,6 +267,7 @@ by calling sema_down() in the parent process before reading the
 bool variable and calling sema_up() in the child process after load() 
 completes, we can ensure the parent process returns only after the child 
 process has finished load().
+
 
 >> B8: Consider parent process P with child process C.  How do you
 >> ensure proper synchronization and avoid race conditions when P
@@ -185,10 +305,12 @@ understood we can solve them by using dynamic strctures such as list. It is
 our choice to favor speed that we choose the design with array and file 
 descriptor as index in the array.
 
+
 >> B11: The default tid_t to pid_t mapping is the identity mapping.
 >> If you changed it, what advantages are there to your approach?
 
 We stick to the default implementation.
+
 
 			   SURVEY QUESTIONS
 			   ================
