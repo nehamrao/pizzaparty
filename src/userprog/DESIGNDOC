@@ -199,9 +199,9 @@ we take advantage of this fact and implement checking the validation of
 user level memory before the system call actually performs execution. Given
 any read or write file system call, first we check if the file descriptor is
 valid, in the range of 2 to 127 or STDIN_FILENO/STDOUT_FILENO for
-read()/write() separately. For read(), if the file descriptor is STDIN_FILENO,
-we call input_getc() to read from stdin; while for write(), we call
-putbuf() when the STDOUT_FILENO is encountered.
+read()/write() respectively. For read(), if the file descriptor is 
+STDIN_FILENO, we call input_getc() to read from stdin; while for write(), 
+we call putbuf() when the STDOUT_FILENO is encountered.
 
 For the next step, we check whether the address provided by user is valid.
 For every page in the range of memory that can be reached from user supplied
@@ -218,6 +218,7 @@ structure according to file descriptor. Then this file structure is used to
 call file system methods file_read_at() or file_write_at() to finish the task.
 Of course, all these file system calls are protected by a global lock to avoid
 race conditions. 
+
 
 >> B4: Suppose a system call causes a full page (4,096 bytes) of data
 >> to be copied from user space into the kernel.  What is the least
