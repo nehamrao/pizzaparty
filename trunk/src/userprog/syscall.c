@@ -166,9 +166,9 @@ _exec (const char *cmd_line)
 
   /* wait to receive message about child loading success */
   struct thread* t = thread_current ();
-  sema_down (&t->sema_load);
+  sema_down (&t->info->sema_load);
 
-  if (t->child_load_success)
+  if (t->info->child_load_success)
       return pid;
   else
       return -1;

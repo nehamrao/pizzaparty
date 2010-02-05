@@ -93,23 +93,18 @@ struct thread
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
-
+    
+    struct thread *parent_thread;	/* Record parent thread */
+    bool is_kernel;			/* True if current thread is kernel 
+ 					   thread. It's used for exit message */
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
-/* yinfeng *******************************************************************/
-    /* used for syscall exec() */
-    bool child_load_success;            /* Indicate success of loading 
-                                           executable file for child process */
-    struct semaphore sema_load;   	/* Sema to ensure load order */
-    struct semaphore sema_wait;		/* Sema to ensure wait order */
     struct file_info *array_files[128]; /* Array of open files */
     struct lock lock_array_files;       /* Lock to protect array of files */
+    struct file *executable;		/* Record current process's executable*/
     struct list child_list;		/* Record thread's children */
-    struct thread *parent_thread;	/* Record parent thread */
-    struct info *info;			/* Infomation pointer */
-    struct file * running_file;
-/* chunyan *******************************************************************/
+    struct info *info;			/* Process metadata */
 #endif
 
     /* Owned by thread.c. */
@@ -126,17 +121,19 @@ struct file_info
 /* global lock on function call to filesys.h and file.h */
 struct lock glb_lock_filesys;
 
-/* Structure to record necessary infomation which could be retrieved even 
-   after the process has exited. */
+/* Metadata for process, which could be retrieved after the process exits. */
 struct info
   {
-    struct thread *thread;
+    struct semaphore sema_load;   	/* Sema to ensure load order */
+    bool child_load_success;            /* Indicate success of loading 
+                                           executable file for child process */
+    struct semaphore sema_wait;		/* Sema to ensure wait order */
     bool already_waited;		/* Whether the process has already been 
-					   waited by its parent*/
-    bool parent_dead;
+					   waited by its parent */
+    bool parent_alive;			/* Whether the parent process is alive*/
     bool is_alive;			/* Whether the process is running */
     int exit_status;			/* Record exit status */
-    tid_t tid;				/* Record the tid */
+    int pid;				/* Record the pid */
     struct list_elem elem;		/* For parent thread's child_list */
   };
 /* chunyan *******************************************************************/
