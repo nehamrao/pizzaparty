@@ -57,28 +57,27 @@ static bool argument_passing (const char *cmd_line, void **esp);
 To implement argument parsing, we first scan in reverse order (from right
 to left) to find each argument within the input command line using pointer 
 char *curr, and for each argument encountered, we push it on top of user stack
-beginning from PHYS_BASE - 1; after successfully pushing all arguments, we
-perform word-alignment for better accessing speed; after that, we scan from
-PHYS_BASE - 1 to find the beginning address of each argument, and push it on 
-stack. In this way, when we want to get arguments back, we can just using pop 
-operation to ensure the right order of arguments. The elements of argv[] is 
-ensured to be in right order by push the arguments into stack from end to 
-beginning.
+beginning from PHYS_BASE - 1; after successfully pushing all the arguments, we
+insert word-alignment segement for better accessing speed; after that, we scan
+the stack for the address of each argument, and push it on stack. The elements 
+of argv[] is ensured to be in right order by push the arguments into stack in 
+reverse order. 
 
-To avoid overflowing the stack page, first, when we push any argument to the 
-stack, we check the argument length is not larger than available space; 
-second, we add a utility function push_4byte to push pointers or integers on 
-top of user stack page, and make boundary check to make sure each push of argv
-address does not overflow the stack page.
+We also implement method to avoid overflowing the stack page. Firstly, when we
+push any argument to the the stack, we ensure that the argument length is not 
+longer than available space; secondly, we add a utility function push_4byte to 
+push argv addresses, argv, argc and fake return address to the top of user 
+stack, and by performing boundary check to make sure each push does not 
+overflow the stack page.
 
 
 ---- RATIONALE ----
 
 >> A3: Why does Pintos implement strtok_r() but not strtok()?
 
-strtok() typically uses a static pointer to store the states (where we 
-are within the string last time). The static pointer is subjected to potential
-race conditions and is thus not thread-safe.
+strtok() typically uses a static pointer to store the states (the position in
+the string). The static pointer is subjected to potential race conditions and 
+is thus not thread-safe.
 
 strtok_r() takes a third arguments to determine the place within the string 
 to go on searching tokens. The space to store the states is offered by the 
@@ -95,7 +94,7 @@ unsafe command line before they arrive at kernel directly, and thus reduce
 the complexity of kernel operations.
 
 In Unix-like systems, the separation between executable name and arguments 
-enables more complex semantics such as redirection, pipeline in shell 
+enables more complex semantics such as redirection, pipelining in shell 
 operations. With Pintos' approach, we would have to add a lot of code in 
 kernel to achieve similar goals, and this violates the laying design principle
 commonly used in computer system.
@@ -136,24 +135,26 @@ struct thread
     /* ... */
   };
 
-/* structure to record relevant file information */
+/* Structure to record relevant file information */
 struct file_info
   {
-    unsigned pos;                       /* position within file */
-    struct file* p_file;                /* pointer to actual file structure */
+    unsigned pos;                       /* Position within file */
+    struct file* p_file;                /* Pointer to actual file structure */
   };
 
-/* global lock on function call to filesys.h and file.h */
+/* Global lock on function call to filesys.h and file.h */
 struct lock glb_lock_filesys;
 
 /* Metadata for process, which could be retrieved by parent process even
    after the process exits. */
 struct process_info
   {
-    struct semaphore sema_load;   	/* Sema to ensure load order */
+    struct semaphore sema_load;   	/* Sema to ensure load order between child process
+					   and parent process */
     bool child_load_success;            /* Indicate success of loading 
                                            executable file for child process*/
-    struct semaphore sema_wait;		/* Sema to ensure wait order */
+    struct semaphore sema_wait;		/* Sema to ensure wait order between child process
+					   and parent process */
     bool already_waited;		/* Whether the process has already been 
 					   waited by its parent */
     bool parent_alive;			/* Whether the parent process is 
@@ -209,8 +210,8 @@ address (e.g. from buffer to buffer + size in read() and write()), we first
 verify a user virtual address is below PHYS_BASE, and then we verify that the
 particular page is mapped. In doing so, we ensure the system calls all the
 conditions required to perform the data transfer tasks. If there is any other
-situation that will cause unexpected termination of the process,
-the page_fault handler will take in position.
+situation that will cause unexpected termination of the process, the page_fault
+handler will take in position.
 
 Finally we deal with the typical case where actual file I/O is requested. The
 list of open files recorded in thread structure is queried to find the file
@@ -229,58 +230,64 @@ race conditions.
 
 In our current implementation approach, if a system call causes a full page of
 data to be copied, the greatest possible number of inspection could be 2, and 
-the least number could be 1. We use pagedir_get_page check each page once. 
+the least number could be 1(if we are lucky enought), depending on whether the
+data lies on two different pages. We use pagedir_get_page check each page once.
 So when the data spans two pages, we will check twice, and if the data is 
-only in one page, we only check once.
+within one page, we only check once.
 
 When copying 2 bytes of data, the situation in is similar. The number of 
-inspections depends largely on how many pages the data actually spans.
+inspections depends largely on how many pages the data actually spans. But
+ofcourse, the probability of checking two pages in this case is far lower than
+the above case. 
 
-A different approach is to not check the address for read and write, but let 
-the operations continue until there is an invalid address happens. This way,
-if the address is valid, then 0 times of inspection is needed. For the reading
-of 2 bytes of data, this would happen most of the time. And if an invalid 
-span is passed, the system would write data to the valid portion until
-the invalid address appears. It is clear that writing 2 bytes of data is much 
-faster than calls to pagedir_get_page for inspections. However, the 
-improvement of this approach is unstable and risks more burden to the system.
+A different approach is not to check the address for read and write, but let 
+the operations continue until there is a pagefault occuring. Then we can 
+implement handler to deal with the user pagefault situation properly. In this 
+way, if the address is valid, then 0 inspection is needed. For the reading
+of 2 bytes of data, which would happen much more frequently, significant amount
+of time will be saved. And if an invalid span is attempted, the system would 
+write data to the valid address until the invalid address appears. It is clear
+that reading and writing data are much faster than calls to the time-consuming
+pagedir_get_page for inspections. 
 
 
 >> B5: Briefly describe your implementation of the "wait" system call
 >> and how it interacts with process termination.
 
-To implement "wait" system call, we add struct process_info to record all the
-information such as a process's child list, whether the process is already in 
-wait status, whether a process's parent is alive, whether the process is alive,
-and the exit status of the process.  
+To implement "wait" system call, we add struct process_info to record the
+metadata of the process, such as a process's pid, whether the process is 
+already waited by its parent process, whether a process's parent is alive,
+whether the process is alive, and the exit status of the process.  
 
 Whenever a "wait" system call is called, the function operates as explained
 below:
 
 First, current thread would search among his child list to find if there 
-is one process of his child matches the given pid to wait. If there is one, 
-the child process's information is obtained from the process_info structure. 
+is one process of his child matches the given pid. If there is one, the child 
+process's metadata is retrieved. 
 
-Then we will examine if the parent process is already waiting for the child,
-by checking the already_waited information. If the parent has already waited 
-once for the child, then is immediately returns -1 as required by the 
-assignment. If the process has not been waiting for this child before, then 
-we set the already_waited information to true, preventing further wait's in
+Then we will examine if the parent process has already waited for the child,
+by checking the already_waited member. If the parent has already waited 
+once for the child, then it immediately returns -1 as required by the 
+assignment. If the process has not been waited for this child before, then 
+we set the already_waited information to true, preventing further waits in
 the future.
 
-Next, before actually waits for the child, we first check whether the child 
-is still alive by using the is_alive information in process_info, as it is 
-perfectly normal for a wait system call to be executed when the child is 
-already dead. This is important since an already dead child would not 
-have the chance to wake up its parent process, which would lead to the parent
-wait forever. Note that even though the child may already be dead, its 
-child_info is not freed until both of the parent and child is dead, so we are
-still able to get the dead child's exit_status at this time. If the child is
-not already dead, then this is the time to put the parent into wait.
+Next, before actually waiting for the child, we first check whether the child 
+is still alive by checking is_alive in process metadata, as it is perfectly 
+normal for a wait system call to be executed when the child is already dead. 
+This is important since an already dead child would not have the chance to 
+wake up its parent process, which would lead to the parent to wait forever. 
+Note that even though the child may already be dead, its child_info is not 
+freed until both of the parent and child is dead, so we are still able to 
+get the dead child's exit_status at this time. If the child is not already 
+dead, then this is the time to put the parent to wait.
 
-We implement this by sema_down the semaphore located in children
-process's child_info. By doing so, we ensured that each sema_up of the 
-children process is paired with only its parent's sema_down.
+We implement this by sema_down the semaphore sema_wait child process's 
+metadata process_info. By doing so, we ensured that each sema_up of the 
+children process is paired with only its parent's sema_down, or without
+its parent's sema_down in case the parent not waiting for this child 
+process. 
 
 
 >> B6: Any access to user program memory at a user-specified address
