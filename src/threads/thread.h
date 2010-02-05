@@ -101,10 +101,9 @@ struct thread
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
     struct file_info *array_files[128]; /* Array of open files */
-    struct lock lock_array_files;       /* Lock to protect array of files */
     struct file *executable;		/* Record current process's executable*/
     struct list child_list;		/* Record thread's children */
-    struct info *info;			/* Process metadata */
+    struct process_info *process_info;		/* Process metadata */
 #endif
 
     /* Owned by thread.c. */
@@ -122,7 +121,7 @@ struct lock glb_lock_filesys;
 
 /* Metadata for process, which could be retrieved by parent process even
    after the process exits. */
-struct info
+struct process_info
   {
     struct semaphore sema_load;   	/* Sema to ensure load order */
     bool child_load_success;            /* Indicate success of loading 

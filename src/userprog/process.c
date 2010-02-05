@@ -24,7 +24,7 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
 static bool argument_passing (const char *cmd_line, void **esp);
 static bool push_4byte (char** p_stack, void* val, void** esp);
 static void get_prog_file_name (const char* cmd_line, char* prog_file_name);
-void free_info ();
+static void free_info ();
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -80,16 +80,16 @@ start_process (void *file_name_)
   lock_acquire (&glb_lock_filesys);
   success = load (file_name, &if_.eip, &if_.esp);
   struct thread* t = thread_current ();
-  t->parent_thread->info->child_load_success = success;
+  t->parent_thread->process_info->child_load_success = success;
   lock_release (&glb_lock_filesys);
 
-  sema_up (&t->parent_thread->info->sema_load);
+  sema_up (&t->parent_thread->process_info->sema_load);
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
   if (!success) 
     { 
-      t->info->exit_status = -1;
+      t->process_info->exit_status = -1;
       thread_exit ();
     }
 /* chunyan *******************************************************************/
@@ -119,13 +119,13 @@ process_wait (int child_pid)
   /* chunyan *******************************************************************/
   struct thread *cur = thread_current ();
   struct list_elem *elem; 
-  struct info *child_info;
+  struct process_info *child_info;
 
   /* Scan the childlist, looking for the one that matches tid */
   for (elem = list_begin (&cur->child_list); elem != list_end (&cur->child_list);
     elem = list_next (elem))
     {  
-      child_info = list_entry (elem, struct info, elem);
+      child_info = list_entry (elem, struct process_info, elem);
       if (child_info->pid == child_pid)
       {
         if (child_info->already_waited)      /* If already waited, exit */
@@ -165,10 +165,10 @@ process_exit (void)
 /* chunyan *******************************************************************/
   if (!cur->is_kernel)
   {
-    printf ("%s: exit(%d)\n", thread_name(), cur->info->exit_status);
-    cur->info->is_alive = false;
+    printf ("%s: exit(%d)\n", thread_name(), cur->process_info->exit_status);
+    cur->process_info->is_alive = false;
     free_info ();
-    sema_up (&cur->info->sema_wait);
+    sema_up (&cur->process_info->sema_wait);
   }
 /* chunyan *******************************************************************/
 
@@ -668,24 +668,24 @@ get_prog_file_name (const char* cmd_line, char* prog_file_name)
       strlcpy (prog_file_name, cmd_line, strlen (cmd_line) + 1);
 }
 
-void 
+static void 
 free_info ()
 {
   struct thread *cur = thread_current ();
   struct list_elem *elem; 
-  struct info *child_info;
+  struct process_info *child_info;
   elem = list_begin (&cur->child_list);
   while (elem != list_end (&cur->child_list))
   {
-    child_info = list_entry (elem, struct info, elem);
+    child_info = list_entry (elem, struct process_info, elem);
     elem = list_next (elem);
     if (child_info->is_alive == false)
       free (child_info);
     else 
       child_info->parent_alive = false;
   }
-  if (!cur->info->parent_alive)
-    free (cur->info);    
+  if (!cur->process_info->parent_alive)
+    free (cur->process_info);    
   return;
 }
 

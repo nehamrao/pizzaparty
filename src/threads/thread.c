@@ -485,8 +485,6 @@ init_thread (struct thread *t, const char *name, int priority, bool is_kernel)
   /* Initialize file arrays */
   memset (t->array_files, 0, sizeof *(t->array_files));
 
-  /* Initialize semas and locks */
-  lock_init (&t->lock_array_files);
   list_init (&t->child_list);
   t->executable = NULL;
 }
@@ -495,7 +493,7 @@ init_thread (struct thread *t, const char *name, int priority, bool is_kernel)
 static void
 init_info (struct thread *t, tid_t tid)
 {
-  struct info *info = malloc (sizeof (struct info));
+  struct process_info *info = malloc (sizeof (struct process_info));
   if (info == NULL)
     thread_exit();
 
@@ -509,7 +507,7 @@ init_info (struct thread *t, tid_t tid)
   info->parent_alive = true;
   info->exit_status = 0;
 
-  t->info = info;
+  t->process_info = info;
   if (t == initial_thread) return;
 
   /* Push the metadata into the child_list of parent thread */

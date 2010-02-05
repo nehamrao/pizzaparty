@@ -28,6 +28,7 @@ static void _seek (int fd, unsigned position);
 static unsigned _tell (int fd);
 static void _close (int fd);
 static bool checkvaddr(const void * vaddr, unsigned size);
+static bool is_user_fd (int fd);
 
 /* static methods providing utility functions to above methods */
 
@@ -147,28 +148,31 @@ static void
 _exit (int status)
 {
   struct thread *cur = thread_current ();
-  cur->info->exit_status = status;
+  cur->process_info->exit_status = status;
   thread_exit ();
 }
 
 static pid_t
 _exec (const char *cmd_line)
 {
-  /* check address */
-  if (!checkvaddr (cmd_line, 0))
+  /* Check address */
+  if (!checkvaddr (cmd_line, 0) || !checkvaddr(cmd_line, strlen(cmd_line)))
+  {
       kill_process();
+  }
 
-  /* begin executing */
+  /* Begin executing */
   pid_t pid = (pid_t) process_execute (cmd_line);
 
+  /* If pid allocation fails, exit -1 */
   if (pid == -1) 
     return -1;
 
-  /* wait to receive message about child loading success */
+  /* Wait to receive message about child loading success */
   struct thread* t = thread_current ();
-  sema_down (&t->info->sema_load);
+  sema_down (&t->process_info->sema_load);
 
-  if (t->info->child_load_success)
+  if (t->process_info->child_load_success)
       return pid;
   else
       return -1;
@@ -184,7 +188,7 @@ static bool
 _create (const char *file, unsigned initial_size)
 {
   /* check address */
-  if (!checkvaddr (file, 0))
+  if (!checkvaddr (file, 0) || !checkvaddr (file, strlen(file)))
     {
       kill_process();
     }
@@ -202,7 +206,7 @@ static bool
 _remove (const char *file)
 {
   /* check address */
-  if (!checkvaddr (file, 0))
+  if (!checkvaddr (file, 0) || !checkvaddr (file, strlen(file)))
     {
       kill_process();
     }
@@ -219,7 +223,7 @@ static int
 _open (const char *file)
 {
   /* check address */
-  if (!checkvaddr (file, 0))
+  if (!checkvaddr (file, 0) || !checkvaddr (file, strlen(file)))
     {
       kill_process();
     }
@@ -229,14 +233,15 @@ _open (const char *file)
   struct file* f_struct = filesys_open (file);
   lock_release (&glb_lock_filesys);
 
+  /* If open fails, return -1 */
   if (f_struct == NULL)
     {
       return -1;
     }
 
-  /* initialize file_info structure */
+  /* Initialize file_info structure */
   struct file_info* f_info =
-    (struct file_info*)malloc (sizeof (struct file_info));
+    (struct file_info *) malloc (sizeof (struct file_info));
 
   /* for f_info: initial position */
   f_info->pos = 0;
@@ -246,140 +251,104 @@ _open (const char *file)
 
   /* for f_info: allocate file descriptor, add to array_files */
   struct thread* t = thread_current ();
-  lock_acquire (&t->lock_array_files);
   int fd = add_file (t, f_info);
-  lock_release (&t->lock_array_files);
 
   return fd;
 }
 
-
-
 static int
 _filesize (int fd)
 {
-  /* check file descriptor */
-  if (fd < 2 || fd >= 128)
-    {
-      kill_process ();
-    }
+  /* Check file descriptor */
+  if (!is_user_fd (fd))
+    kill_process ();
 
-  /* protected filesys operation: get file size */
+  /* Protect filesys operation: get file size */
   struct thread* t = thread_current ();
   lock_acquire (&glb_lock_filesys);
-  int result = (int)file_length (t->array_files[fd]->p_file);
+  int retval = (int) file_length (t->array_files[fd]->p_file);
   lock_release (&glb_lock_filesys);
 
-  /* result is file size in bytes */
-  return result;
+  /* Retval is file size in bytes */
+  return retval;
 }
 
 static int
 _read (int fd, void *buffer, unsigned size)
 {
-  /* check address */
-  if (!checkvaddr (buffer, size))
+  /* Check address and file descriptor*/
+  if (!checkvaddr (buffer, size) || (!is_user_fd (fd) && (fd != STDIN_FILENO)))
     {
       kill_process();
     }
 
-  /* check file descriptor */
-  if ((fd < 2 || fd >= 128) && (fd != STDIN_FILENO))
-    {
-      kill_process ();
-    }
-
-  /* number of bytes actually read */
+  /* Result is the number of bytes actually read */
   int result = 0;
 
-  if (fd == STDIN_FILENO)       /* read from input */
+  if (fd == STDIN_FILENO)       /* Read from input */
     {
       unsigned i = 0;
       for (i = 0; i < size; i++)
         {
-          *(uint8_t*)buffer = input_getc();
+          *(uint8_t *)buffer = input_getc();
           result++;
           buffer++;
         }
     }
-  else                          /* read from file */
+  else                          /* Read from file */
     {
-      /* get file info */
+      /* Get file info */
       struct thread* t = thread_current();
-      lock_acquire (&t->lock_array_files);
-      if (t->array_files[fd] == NULL)
-        {
-          kill_process ();
-        }
 
       struct file* pf = t->array_files[fd]->p_file;
       unsigned file_offset = t->array_files[fd]->pos;
-
-      lock_release (&t->lock_array_files);
 
       /* protected filesys operation:
          read and record length of read */
       lock_acquire (&glb_lock_filesys);
       result = file_read_at (pf, buffer, size, file_offset);
-      lock_release (&glb_lock_filesys);
 
       /* increment position within file for current thread */
-      lock_acquire (&t->lock_array_files);
       t->array_files[fd]->pos += result;
-      lock_release (&t->lock_array_files);
-    }
 
+      lock_release (&glb_lock_filesys);
+    }
   return result;
 }
 
 static int
 _write (int fd, const void *buffer, unsigned size)
 {
-  /* check address */
-  if (!checkvaddr (buffer, size))
+  /* Check address and file descriptor*/
+  if (!checkvaddr(buffer, size) || (!is_user_fd (fd) && (fd != STDOUT_FILENO)))
     {
       kill_process();
     }
 
-  /* check file descriptor */
-  if ((fd < 2 || fd >= 128) && (fd != STDOUT_FILENO))
-    {
-      kill_process ();
-    }
-
-  /* number of bytes actually written */
+  /* Result is the number of bytes actually written */
   int result = 0;
 
-  if (fd == STDOUT_FILENO)      /* write to console */
+  if (fd == STDOUT_FILENO)      /* Write to console */
     {
       putbuf (buffer, size);
       result = size;
     }
-  else                          /* write to file */
+  else                          /* Write to file */
     {
-      /* get file */
       struct thread* t = thread_current();
-      lock_acquire (&t->lock_array_files);
-      if (t->array_files[fd] == NULL)
-        {
-          kill_process ();
-        }
 
+      /* Get file info*/
       struct file* pf = t->array_files[fd]->p_file;
       unsigned file_offset = t->array_files[fd]->pos;
 
-      lock_release (&t->lock_array_files);
-
-      /* protected filesys operation:
+      /* Protect filesys operation:
          write and record length of read */
       lock_acquire (&glb_lock_filesys);
       result = file_write_at (pf, buffer, size, file_offset);
-      lock_release (&glb_lock_filesys);
 
-      /* increment position within file for current thread */
-      lock_acquire (&t->lock_array_files);
+      /* Increment position within file for current thread */
       t->array_files[fd]->pos += result;
-      lock_release (&t->lock_array_files);
+      lock_release (&glb_lock_filesys);
     }
 
   return result;
@@ -388,112 +357,100 @@ _write (int fd, const void *buffer, unsigned size)
 static void
 _seek (int fd, unsigned position)
 {
-  /* check file descriptor */
-  if (fd < 2 || fd >= 128)
+  /* Check file descriptor */
+  if (!is_user_fd (fd))
     {
       kill_process ();
     }
 
-  /* seek to desired position */
+  if (position < 0) 
+    position = 0;
+  if (position > _filesize (fd)) 
+    position = _filesize (fd);
+
+  /* Seek to desired position */
   struct thread* t = thread_current ();
-  lock_acquire (&t->lock_array_files);
-  if (t->array_files[fd] == NULL)
-    {
-      kill_process ();
-    }
-
   t->array_files[fd]->pos = position;
-
-  lock_release (&t->lock_array_files);
 }
 
 static unsigned
 _tell (int fd)
 {
-  /* check file descriptor */
-  if (fd < 2 || fd >= 128)
+  /* Check file descriptor */
+  if (!is_user_fd (fd))
+    {
       kill_process ();
+    }
 
-  /* tell current position */
+  /* Tell current position */
   struct thread* t = thread_current ();
-  lock_acquire (&t->lock_array_files);
-
-  unsigned result = t->array_files[fd]->pos;
-
-  lock_release (&t->lock_array_files);
-
-  return result;
+  return t->array_files[fd]->pos;
 }
 
 static void
 _close (int fd)
 {
-  /* check file descriptor */
-  if (fd < 2 || fd >= 128)
+  /* Check file descriptor */
+  if (!is_user_fd (fd))
     {
       kill_process ();
     }
 
-  /* get file info, and remove from array_files */
+  /* Get file info, and remove from array_files */
   struct thread* t = thread_current ();
-  lock_acquire (&t->lock_array_files);
 
-  if (t->array_files[fd] == NULL)
-    {
-      kill_process ();
-    }
   struct file* p_file = t->array_files[fd]->p_file;
+
+  /* Protect filesys operation: close file */
+  lock_acquire (&glb_lock_filesys);
+
   free (t->array_files[fd]);
   t->array_files[fd] = NULL;
 
-  lock_release (&t->lock_array_files);
-
-  /* protectec filesys operation: close file */
-  lock_acquire (&glb_lock_filesys);
   file_close (p_file);
   lock_release (&glb_lock_filesys);
 }
 
 
-/* utility methods */
+/* Utility functions */
 
 static uint32_t
 read_stack (struct intr_frame *f, int offset)
 {
-  /* check address */
+  /* Check address */
   if (!checkvaddr (f->esp + offset, 0))
       kill_process();
 
   return *(uint32_t *)(f->esp + offset);
 }
 
+/* Kill the process due to abnormal behavior */
 static void
 kill_process ()
 {
   _exit (-1);
-  return;
 }
 
 static int
 add_file (struct thread* t, struct file_info* f_info)
 {
-  int fd = -1;
+  int fd;
   for (fd = 2; fd < 128; fd++)
     {
-      /* found available file descriptor number */
+      /* Find available file descriptor number */
       if (t->array_files[fd] == NULL)
         {
-          /* add file */
+          /* Add file */
           t->array_files[fd] = f_info;
 
-          /* return file descriptor */
+          /* Return file descriptor */
           return fd;
         }
     }
   return fd;
 }
 
-
+/* Check validity of buffer starting at vaddr, with length of size*/
 static bool
 checkvaddr(const void * vaddr, unsigned size)
 {
@@ -501,15 +458,28 @@ checkvaddr(const void * vaddr, unsigned size)
 
   struct thread *t = thread_current ();
 
-  for (pcheck = pg_round_down(vaddr); pcheck <= pg_round_down(vaddr+size);)
-  {
-    if (!is_user_vaddr (pcheck)) 
-      return false;
-    if (!pagedir_get_page (t->pagedir, pcheck))
-      return false;
-    pcheck += PGSIZE;      
-  } 
-    return true;
+  /* If the address exceeds PHYS_BASE, exit -1 */
+  if (!is_user_vaddr (vaddr + size)) 
+    return false;
+
+  /* Check if every page is mapped */
+  for (pcheck = pg_round_down (vaddr); 
+       pcheck <= pg_round_down (vaddr + size);)
+       {
+         if (!pagedir_get_page (t->pagedir, pcheck))
+           return false;
+         pcheck += PGSIZE;      
+       } 
+  return true;
+}
+
+/* Check the validity of the user file descriptor */
+static bool
+is_user_fd (int fd)
+{
+   struct thread *t = thread_current ();
+
+   return ((fd >= 2) && (fd < 128) && (t->array_files[fd] != NULL));
 }
 
 
