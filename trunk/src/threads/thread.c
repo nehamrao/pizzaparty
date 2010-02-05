@@ -188,7 +188,7 @@ thread_create (const char *name, int priority,
   init_thread (t, name, priority, false);
   tid = t->tid = allocate_tid ();
 
-  /* Initialize thread info */
+  /* Initialize process metadata */
   init_info (t, tid);
 
   /* Prepare thread for first run by initializing its stack.
@@ -478,22 +478,20 @@ init_thread (struct thread *t, const char *name, int priority, bool is_kernel)
   t->magic = THREAD_MAGIC;
   list_push_back (&all_list, &t->allelem);
 
-/* yinfeng *******************************************************************/
   t->is_kernel = is_kernel;
+  if (t != initial_thread)
+    t->parent_thread = thread_current ();
+
+  /* Initialize file arrays */
+  memset (t->array_files, 0, sizeof *(t->array_files));
+
   /* Initialize semas and locks */
-  int i;
-  for (i = 0; i < 128; i++)
-      t->array_files[i] = NULL; 
   lock_init (&t->lock_array_files);
   list_init (&t->child_list);
   t->executable = NULL;
-/* chunyan *******************************************************************/
-
 }
 
-/* chunyan *******************************************************************/
-
-/* Initialize struct info of the current thread */ 
+/* Initialize metadata of current process */ 
 static void
 init_info (struct thread *t, tid_t tid)
 {
@@ -501,7 +499,7 @@ init_info (struct thread *t, tid_t tid)
   if (info == NULL)
     thread_exit();
 
-  t->info = info;
+  /* Initialize members */
   sema_init (&info->sema_wait, 0);
   sema_init (&info->sema_load, 0);
   info->child_load_success = true;
@@ -510,15 +508,13 @@ init_info (struct thread *t, tid_t tid)
   info->is_alive = true;
   info->parent_alive = true;
   info->exit_status = 0;
-  
+
+  t->info = info;
   if (t == initial_thread) return;
 
-  struct thread *cur = thread_current ();
-  t->parent_thread = cur;
-  list_push_back (&cur->child_list, &info->elem);
-  return;
+  /* Push the metadata into the child_list of parent thread */
+  list_push_back (&t->parent_thread->child_list, &info->elem);
 }
-/* chunyan *******************************************************************/
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
    returns a pointer to the frame's base. */
