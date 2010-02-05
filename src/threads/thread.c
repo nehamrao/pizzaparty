@@ -64,7 +64,7 @@ static void kernel_thread (thread_func *, void *aux);
 static void idle (void *aux UNUSED);
 static struct thread *running_thread (void);
 static struct thread *next_thread_to_run (void);
-static void init_thread (struct thread *, const char *name, int priority);
+static void init_thread (struct thread *, const char *name, int priority, bool is_kernel);
 static bool is_thread (struct thread *) UNUSED;
 static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
@@ -97,7 +97,7 @@ thread_init (void)
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
-  init_thread (initial_thread, "main", PRI_DEFAULT);
+  init_thread (initial_thread, "main", PRI_DEFAULT, true);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
 }
@@ -185,7 +185,7 @@ thread_create (const char *name, int priority,
     return TID_ERROR;
 
   /* Initialize thread. */
-  init_thread (t, name, priority);
+  init_thread (t, name, priority, false);
   tid = t->tid = allocate_tid ();
 
   /* Initialize thread info */
@@ -464,7 +464,7 @@ is_thread (struct thread *t)
 /* Does basic initialization of T as a blocked thread named
    NAME. */
 static void
-init_thread (struct thread *t, const char *name, int priority)
+init_thread (struct thread *t, const char *name, int priority, bool is_kernel)
 {
   ASSERT (t != NULL);
   ASSERT (PRI_MIN <= priority && priority <= PRI_MAX);
@@ -479,16 +479,14 @@ init_thread (struct thread *t, const char *name, int priority)
   list_push_back (&all_list, &t->allelem);
 
 /* yinfeng *******************************************************************/
+  t->is_kernel = is_kernel;
   /* Initialize semas and locks */
-  sema_init (&t->sema_load, 0);
-  sema_init (&t->sema_wait, 0); 
-  t->child_load_success = true;
-  int i = 0;
+  int i;
   for (i = 0; i < 128; i++)
-      t->array_files[i] = NULL;  //***JACK, malloc?
+      t->array_files[i] = NULL; 
   lock_init (&t->lock_array_files);
   list_init (&t->child_list);
-  t->running_file = NULL;
+  t->executable = NULL;
 /* chunyan *******************************************************************/
 
 }
@@ -504,11 +502,13 @@ init_info (struct thread *t, tid_t tid)
     thread_exit();
 
   t->info = info;
-  info->thread = t;
-  info->tid = tid;
+  sema_init (&info->sema_wait, 0);
+  sema_init (&info->sema_load, 0);
+  info->child_load_success = true;
+  info->pid = tid;
   info->already_waited = false;
   info->is_alive = true;
-  info->parent_dead = false;
+  info->parent_alive = true;
   info->exit_status = 0;
   
   if (t == initial_thread) return;

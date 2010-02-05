@@ -79,12 +79,11 @@ start_process (void *file_name_)
   /* protect filesys operations */
   lock_acquire (&glb_lock_filesys);
   success = load (file_name, &if_.eip, &if_.esp);
-//  printf("success = %ld\n", success); //test
   struct thread* t = thread_current ();
-  t->parent_thread->child_load_success = success;
+  t->parent_thread->info->child_load_success = success;
   lock_release (&glb_lock_filesys);
 
-  sema_up (&t->parent_thread->sema_load);
+  sema_up (&t->parent_thread->info->sema_load);
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
@@ -115,7 +114,7 @@ start_process (void *file_name_)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid) 
+process_wait (int child_pid) 
 {
   /* chunyan *******************************************************************/
   struct thread *cur = thread_current ();
@@ -127,7 +126,7 @@ process_wait (tid_t child_tid)
     elem = list_next (elem))
     {  
       child_info = list_entry (elem, struct info, elem);
-      if (child_info->tid == child_tid)
+      if (child_info->pid == child_pid)
       {
         if (child_info->already_waited)      /* If already waited, exit */
           return -1;
@@ -135,7 +134,7 @@ process_wait (tid_t child_tid)
         if (!child_info->is_alive)	     /* If not alive, return status */
           return child_info->exit_status;
         else
-          sema_down (&child_info->thread->sema_wait);
+          sema_down (&child_info->sema_wait);
         return child_info->exit_status;
       }
     }
@@ -154,25 +153,22 @@ process_exit (void)
   int fd;
   for (fd = 2;fd < 128; fd ++)
   {
-
       if (cur->array_files[fd] != NULL)
         {
-          /* close all files */
+          /* close all files and free their resources */
           file_close (cur->array_files[fd]->p_file);
           free (cur->array_files[fd]);
         }    
   }
-
-  if (cur->running_file != NULL)
-    file_close (cur->running_file);
+  file_close (cur->executable);
 
 /* chunyan *******************************************************************/
-  if (cur->tid > 2) 	/***** REVISE HERE***/
+  if (!cur->is_kernel)
   {
     printf ("%s: exit(%d)\n", thread_name(), cur->info->exit_status);
     cur->info->is_alive = false;
     free_info ();
-    sema_up (&cur->sema_wait);
+    sema_up (&cur->info->sema_wait);
   }
 /* chunyan *******************************************************************/
 
@@ -401,14 +397,11 @@ load (const char *cmd_line, void (**eip) (void), void **esp)
   if (!argument_passing (cmd_line, esp))
     goto done;
   
-  t->running_file = file;
-  success = true;
-  return success;  // ********************************************???
+  t->executable = file;
+  return true;
 
  done:
   /* We arrive here whether the load is successful or not. */
-//  if (file != NULL)
-//    file_close (file);
   return success;
 }
 
@@ -689,9 +682,9 @@ free_info ()
     if (child_info->is_alive == false)
       free (child_info);
     else 
-      child_info->parent_dead = true;
+      child_info->parent_alive = false;
   }
-  if (cur->info->parent_dead)
+  if (!cur->info->parent_alive)
     free (cur->info);    
   return;
 }
