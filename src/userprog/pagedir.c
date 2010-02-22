@@ -5,6 +5,7 @@
 #include "threads/init.h"
 #include "threads/pte.h"
 #include "threads/palloc.h"
+#include "vm/frame.h"
 
 static uint32_t *active_pd (void);
 static void invalidate_pagedir (uint32_t *);
@@ -41,7 +42,12 @@ pagedir_destroy (uint32_t *pd)
         
         for (pte = pt; pte < pt + PGSIZE / sizeof *pte; pte++)
           if (*pte & PTE_P) 
+          {
+/****************************************************************************/
+            sup_pt_delete (pte);
+/****************************************************************************/
             palloc_free_page (pte_get_page (*pte));
+          }
         palloc_free_page (pt);
       }
   palloc_free_page (pd);
@@ -112,6 +118,13 @@ pagedir_set_page (uint32_t *pd, void *upage, void *kpage, bool writable)
     {
       ASSERT ((*pte & PTE_P) == 0);
       *pte = pte_create_user (kpage, writable);
+/****************************************************************************/
+      if (!sup_pt_set_memory_map (pte, kpage))
+      {
+        *pte &= ~PTE_P;
+        return false;
+      }
+/****************************************************************************/
       return true;
     }
   else
