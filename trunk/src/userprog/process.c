@@ -497,7 +497,7 @@ load_segment (struct file *file, off_t ofs, uint32_t *upage,
 //         palloc_free_page (kpage);
 //          return false; 
 //        }
-      uint32_t flag = POS_DISK | TYPE_Executable | (writable ? 0 : RW_R);
+      uint32_t flag = POS_DISK | TYPE_Executable | (writable ? 0 : FS_READONLY);
       mark_page (upage, NULL, page_read_bytes, flag, sector); // Set flag *** sector = ?*********************************************************
 /****************************************************************************/
 

@@ -169,21 +169,39 @@ page_fault (struct intr_frame *f)
           user ? "user" : "kernel");
   kill (f);
 */
-  struct thread *t = thread_current ();
-  uint32_t *pd, *pde, *pt, *pte;
-  pd = t->page_dir;
-  pde = pd + pd_no (fault_addr);
-  if (*pde == 0)
+  if (user)
   {
-    kill (f);
-    return;
-  }
-  pt = pde_get_pt (*pde);
-  pte = pt + pt_no (fault_addr);
-  struct page_struct *ps = sup_pt_lookup (pte);
-  if (ps == NULL)
-    kill (f);
-  if (!swap_in (ps->fs))
+    struct thread *t = thread_current ();
+    uint32_t *pd, *pde, *pt, *pte;
+    pd = t->page_dir;
+    pde = pd + pd_no (fault_addr);
+    if (*pde == 0)
+    {
+      kill (f);
+      return;
+    }
+    pt = pde_get_pt (*pde);
+    pte = pt + pt_no (fault_addr);
+    struct page_struct *ps = sup_pt_lookup (pte);
+
+// the user process should not expect any data at the address it was trying to access , or if the page lies within kernel virtual memory
+    if (ps == NULL) 
+    {
+      kill (f);
+      return;
+    }
+// the access is an attempt to write to a read-only page
+    if (write && (ps->fs->flag & FS_READONLY))
+    {
+      kill (f);   
+      return;
+    }
+// If you implement sharing, the page's data might even already be in a page frame, but not in the page table.
+    if (ps->fs->flag & POSBITS == POS_MEM) 
+      *pte = pte_create_user (ps->fs->vaddr, !(ps->fs->flag & FS_READONLY));
+    else if (!swap_in (ps->fs))
+      kill (f);
+  } else 
     kill (f);
   return;
 /****************************************************************************/
