@@ -16,9 +16,7 @@
 #define TYPEMASK		~TYPEBITS;
 
 #define FS_READONLY		0x10;
-#define FS_ACCESS		0x20;
-#define FS_DIRTY		0x40;
-#define FS_PIN			0x80;
+#define FS_PIN			0x10000;
 
 #define SECTOR_ERROR		SIZE_MAX;
 
@@ -43,7 +41,7 @@ struct pte_shared
 {
   uint32_t *pte;
   list_elem elem;
-}
+};
 
 // Supplemental page table is global.
 struct page_struct *sup_pt_lookup (uint32_t *pte);
