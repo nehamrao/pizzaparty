@@ -19,6 +19,7 @@
 #include "threads/vaddr.h"
 #include "threads/pte.h"
 #include "threads/malloc.h"
+#include "vm/frame.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -368,7 +369,7 @@ load (const char *cmd_line, void (**eip) (void), void **esp)
                   zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
                 }
               if (!load_segment (file, file_page, (void *) mem_page,
-                                 read_bytes, zero_bytes, writable))
+                                 read_bytes, zero_bytes, writable)) // *** some flag parameters needed.
                 goto done;
             }
           else
@@ -460,7 +461,7 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
    Return true if successful, false if a memory allocation error
    or disk read error occurs. */
 static bool
-load_segment (struct file *file, off_t ofs, uint8_t *upage,
+load_segment (struct file *file, off_t ofs, uint32_t *upage,
               uint32_t read_bytes, uint32_t zero_bytes, bool writable) 
 {
   ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
@@ -476,25 +477,29 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
+/****************************************************************************/
       /* Get a page of memory. */
-      uint8_t *kpage = palloc_get_page (PAL_USER);
-      if (kpage == NULL)
-        return false;
+//      uint8_t *kpage = palloc_get_page (PAL_USER);
+//      if (kpage == NULL)
+//       return false;
 
       /* Load this page. */
-      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
-        {
-          palloc_free_page (kpage);
-          return false; 
-        }
-      memset (kpage + page_read_bytes, 0, page_zero_bytes);
+//      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
+//        {
+//          palloc_free_page (kpage);
+//          return false; 
+//        }
+//      memset (kpage + page_read_bytes, 0, page_zero_bytes);
 
       /* Add the page to the process's address space. */
-      if (!install_page (upage, kpage, writable)) 
-        {
-          palloc_free_page (kpage);
-          return false; 
-        }
+//      if (!install_page (upage, kpage, writable)) 
+//        {
+//         palloc_free_page (kpage);
+//          return false; 
+//        }
+      uint32_t flag = POS_DISK | TYPE_Executable | (writable ? 0 : RW_R);
+      mark_page (upage, NULL, page_read_bytes, flag, sector); // Set flag *** sector = ?*********************************************************
+/****************************************************************************/
 
       /* Advance. */
       read_bytes -= page_read_bytes;
@@ -515,6 +520,9 @@ setup_stack (void **esp)
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
   if (kpage != NULL) 
     {
+/****************************************************************************/
+      sup_pt_add (thread_current ()->pagedir, ((uint8_t *) PHYS_BASE) - PGSIZE, kpage, PGSIZE, POS_MEM | TYPE_Stack, 0); // Set flag ***
+/****************************************************************************/
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
         *esp = PHYS_BASE;
@@ -523,6 +531,21 @@ setup_stack (void **esp)
     }
   return success;
 }
+/************************************************************************/
+
+/* install_page without actually loading in the data */
+static bool
+mark_page (void *upage, uint32_t *addr, int length, uint32_t flag, int sector)
+{
+  struct thread *t = thread_current ();
+
+  if (pagedir_get_page (t->pagedir, upage) == NULL) 
+    return false;
+
+  sup_pt_add (t->pagedir, upage, addr, length, flag, sector);
+  return true;
+}
+/************************************************************************/
 
 /* Adds a mapping from user virtual address UPAGE to kernel
    virtual address KPAGE to the page table.

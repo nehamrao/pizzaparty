@@ -1,4 +1,6 @@
 #include "userprog/exception.h"
+#include "vm/frame.h"
+#include "vm/swap.h"
 #include <inttypes.h>
 #include <stdio.h>
 #include "userprog/gdt.h"
@@ -86,7 +88,7 @@ kill (struct intr_frame *f)
     case SEL_UCSEG:
       /* User's code segment, so it's a user exception, as we
          expected.  Kill the user process.  */
-      thread_current ()->process_info->exit_status = -1; /*******************************/ 
+      thread_current ()->process_info->exit_status = -1; 
       printf ("%s: dying due to interrupt %#04x (%s).\n",
               thread_name (), f->vec_no, intr_name (f->vec_no));
       intr_dump_frame (f);
@@ -149,20 +151,41 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
+/****************************************************************************/
+/*
   if (user) 
   {
     kill (f);
     return;
   }
-
+*/
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
-  printf ("Page fault at %p: %s error %s page in %s context.\n",
+/*  printf ("Page fault at %p: %s error %s page in %s context.\n",
           fault_addr,
           not_present ? "not present" : "rights violation",
           write ? "writing" : "reading",
           user ? "user" : "kernel");
   kill (f);
+*/
+  struct thread *t = thread_current ();
+  uint32_t *pd, *pde, *pt, *pte;
+  pd = t->page_dir;
+  pde = pd + pd_no (fault_addr);
+  if (*pde == 0)
+  {
+    kill (f);
+    return;
+  }
+  pt = pde_get_pt (*pde);
+  pte = pt + pt_no (fault_addr);
+  struct page_struct *ps = sup_pt_lookup (pte);
+  if (ps == NULL)
+    kill (f);
+  if (!swap_in (ps->fs))
+    kill (f);
+  return;
+/****************************************************************************/
 }
 
