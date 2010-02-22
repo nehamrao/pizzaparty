@@ -39,7 +39,6 @@ sup_pt_lookup (uint32_t *pte)
   return (e != NULL) ? hash_entry (e, struct page_struct, elem) : NULL;
 }
 
-
 void 
 sup_pt_init (void)
 {
@@ -207,7 +206,7 @@ sup_pt_fs_set_dirty (struct frame_struct *fs, bool dirty)
 }
 
 bool 
-sup_pt_fs_scan_and_set_pte (struct frame_struct *fs, bool value)
+sup_pt_fs_scan_and_set_access (struct frame_struct *fs, bool value)
 {
   bool flag = false;
   struct list_elem *e;
