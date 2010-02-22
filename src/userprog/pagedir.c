@@ -44,9 +44,10 @@ pagedir_destroy (uint32_t *pd)
           if (*pte & PTE_P) 
           {
 /****************************************************************************/
-            sup_pt_delete (pte);
+  	  /* If this is the last entry, then free the frame */	    
+            if (sup_pt_delete (pte))
+              palloc_free_page (pte_get_page (*pte));
 /****************************************************************************/
-            palloc_free_page (pte_get_page (*pte));
           }
         palloc_free_page (pt);
       }
