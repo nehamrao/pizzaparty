@@ -59,5 +59,5 @@ void sup_pt_fs_set_dirty (struct frame_struct *fs, bool dirty);
 bool sup_pt_fs_is_dirty (struct frame_struct *fs);
 void sup_pt_fs_set_pte_list (struct frame_struct *fs, uint32_t *kpage, bool present);
 
-bool sup_pt_fs_scan_and_set_pte (struct frame_struct *fs, bool value);
+bool sup_pt_fs_scan_and_set_access (struct frame_struct *fs, bool value);
 
