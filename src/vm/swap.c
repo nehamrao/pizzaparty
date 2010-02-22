@@ -25,9 +25,9 @@ void swap_init ()
 bool swap_in (struct frame_struct *pframe)
 {
   struct block *device;
-  block_sector_t sector_no = pframe->sector;
+  block_sector_t sector_no = pframe->sector_no;
   size_t length = pframe->length;
-  if (sector_no == BITMAP_ERROR)
+  if (sector_no == SECTOR_ERROR)
   {
      printf ("Sector number invalid!\n");
      return FALSE;
@@ -108,7 +108,7 @@ bool swap_out (struct frame_struct *pframe)
   }
   else            
   {
-    sup_pt_set_swap_out (pframe, pframe->sector, TRUE); 
+    sup_pt_set_swap_out (pframe, pframe->sector_no, TRUE); 
     return true;
   } 
 

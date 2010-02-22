@@ -3,7 +3,6 @@
 #include "threads/pte.h"
 #include "lib/kernel/hash.h"
 
-
 static unsigned sup_pt_hash_func (const struct hash_elem *element, void *aux);
 static bool sup_pt_less_func (const struct hash_elem *a, const struct hash_elem *b, void *aux);
 
@@ -50,7 +49,7 @@ sup_pt_init (void)
 
 /* Create an entry to sup_pt, according to the given info*/
 bool 
-sup_pt_add (uint32_t *pd, void *upage, uint32_t *vaddr, int length, uint32_t flag, int sector)
+sup_pt_add (uint32_t *pd, void *upage, uint32_t *vaddr, int length, uint32_t flag, block_sector_t sector_no)
 {
   uint32_t *pte = lookup_page (pd, upage);
   if (pte == NULL)
@@ -71,7 +70,7 @@ sup_pt_add (uint32_t *pd, void *upage, uint32_t *vaddr, int length, uint32_t fla
   ps->fs->vaddr = vaddr;
   ps->fs->length = length;
   ps->fs->flag = flag;
-  ps->sector = sector; // Reuse possible
+  ps->fs->sector_no = sector_no; // Reuse possible
   list_init (&ps->pte_list);
   // perhaps lock needed here ***
   struct pte_shared *p;
@@ -145,9 +144,9 @@ void
 sup_pt_set_swap_in (struct frame_struct *fs, void *kpage)
 {
   fs->vaddr = kpage;
-  fs->sector = 0;
+  fs->sector_no = SECTOR_ERROR;
   fs->flag = (fs->flag & POSMASK) | POS_MEM;
-  sup_pt_fs_set_pte_list (fs, true);
+  sup_pt_fs_set_pte_list (fs, kpage, true);
 }
 
 bool 
@@ -161,12 +160,12 @@ sup_pt_set_memory_map (uint32_t *pte, void *kpage)
 }
 
 void
-sup_pt_set_swap_out (struct frame_struct *fs, int sector, bool is_on_disk)
+sup_pt_set_swap_out (struct frame_struct *fs, block_sector_t sector_no, bool is_on_disk)
 {
   fs->vaddr = NULL;
-  fs->sector = sector;
+  fs->sector_no = sector_no;
   fs->flag = (fs->flag & POSMASK) | (is_on_disk ? POS_DISK : POS_SWAP);
-  sup_pt_fs_set_pte_list (fs, false);
+  sup_pt_fs_set_pte_list (fs, NULL, false);
 }
 
 void 
@@ -190,7 +189,7 @@ sup_pt_fs_set_dirty (struct frame_struct *fs, bool dirty)
 }
 
 void 
-sup_pt_fs_set_pte_list (struct frame_struct *fs, bool present)
+sup_pt_fs_set_pte_list (struct frame_struct *fs, uint32_t *kpage, bool present)
 {
   struct list_elem *e;
   struct list *list = fs->pte_list;
@@ -198,7 +197,9 @@ sup_pt_fs_set_pte_list (struct frame_struct *fs, bool present)
   {
     struct pte_shared *pte_shared = list_entry (e, struct pte_shared, elem);
     if (present)
-      pte_share->pte |= PTE_P;
+    {
+      pte_share->pte = pte_create_user (kpage, !(fs->flag & FS_READONLY));
+    }
     else 
       pte_share->pte &= ~PTE_P;
   }
