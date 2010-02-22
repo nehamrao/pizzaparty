@@ -23,6 +23,7 @@
 #include "threads/pte.h"
 #include "threads/thread.h"
 #include "vm/frame.h"
+#include "vm/swap.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #include "userprog/exception.h"
@@ -37,6 +38,7 @@
 #include "devices/ide.h"
 #include "filesys/filesys.h"
 #include "filesys/fsutil.h"
+
 #endif
 
 /* Page directory with kernel mappings only. */
@@ -100,6 +102,7 @@ main (void)
   malloc_init ();
   paging_init ();
   sup_pt_init ();
+  swap_init ();
 
   /* Segmentation. */
 #ifdef USERPROG

@@ -14,6 +14,8 @@
 #define TYPE_Executable 	0x8;
 #define TYPE_MMFile 		0x10;
 #define TYPE_Stack		0x18;  
+#define TYPEBITS		0x18;
+#define TYPEMASK		~TYPEBITS;
 
 #define FS_ACCESS		0x20;
 #define FS_DIRTY		0x40;
