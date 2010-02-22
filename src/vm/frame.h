@@ -16,7 +16,8 @@
 #define TYPEMASK		~TYPEBITS;
 
 #define FS_READONLY		0x10;
-#define FS_PIN			0x10000;
+#define FS_DIRTY		0x20;
+#define FS_PINED		0x10000;
 
 #define SECTOR_ERROR		SIZE_MAX;
 
@@ -54,8 +55,8 @@ bool sup_pt_delete (uint32_t *pte);
 bool sup_pt_set_memory_map (uint32_t *pte, void *kpage);
 void sup_pt_set_swap_in (struct frame_struct *fs, void *kpage);
 void sup_pt_set_swap_out (struct frame_struct *fs, block_sector_t sector_no, bool is_on_disk);
-void sup_pt_fs_set_access (struct frame_struct *fs, bool access);
 void sup_pt_fs_set_dirty (struct frame_struct *fs, bool dirty);
+bool sup_pt_fs_is_dirty (struct frame_struct *fs);
 void sup_pt_fs_set_pte_list (struct frame_struct *fs, uint32_t *kpage, bool present);
 
 bool sup_pt_fs_scan_and_set_pte (struct frame_struct *fs, bool value);

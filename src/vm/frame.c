@@ -128,7 +128,7 @@ sup_pt_delete (uint32_t *pte)
 
   struct list *list = ps->fs->pte_list;
   struct list_elem *e;
-  for (e = list_begin (list); e != list_end (list); e = list_next (list))
+  for (e = list_begin (list); e != list_end (list); e = list_next (e))
   {
     struct pte_shared *pte_shared = list_entry (e, struct pte_shared, elem);
     if (pte_shared->pte == pte)
@@ -175,17 +175,25 @@ sup_pt_set_swap_out (struct frame_struct *fs, block_sector_t sector_no, bool is_
   fs->vaddr = NULL;
   fs->sector_no = sector_no;
   fs->flag = (fs->flag & POSMASK) | (is_on_disk ? POS_DISK : POS_SWAP);
+  if (sup_pt_fs_is_dirty (fs))
+    fs->flag |= FS_DIRTY;
+  else 
+    fs->flag &= FS_DIRTY;
   sup_pt_fs_set_pte_list (fs, NULL, false);
 }
 
-void 
-sup_pt_fs_set_access (struct frame_struct *fs, bool access)
+bool
+sup_pt_fs_is_dirty (struct frame_struct *fs)
 {
-  if (access)
-    fs->flag |= FS_ACCESS;
-  else 
-    fs->flag &= ~FS_ACCESS;
-  return;
+  struct list *list = ps->fs->pte_list;
+  struct list_elem *e;
+  for (e = list_begin (list); e != list_end (list); e = list_next (e))
+  {
+    struct pte_shared *pte_shared = list_entry (e, struct pte_shared, elem);
+    if (pte_shared->pte & PTE_D)
+      return true;
+  }  
+  return false;
 }
 
 void 
@@ -204,7 +212,7 @@ sup_pt_fs_scan_and_set_pte (struct frame_struct *fs, bool value)
   bool flag = false;
   struct list_elem *e;
   struct list *list = fs->pte_list;
-  for (e = list_begin (list); e != list_end (list); e = list_next (list))
+  for (e = list_begin (list); e != list_end (list); e = list_next (e))
   {
     struct pte_shared *pte_shared = list_entry (e, struct pte_shared, elem);
     if (pte_shared->pte & PTE_A == !value)
@@ -225,12 +233,14 @@ sup_pt_fs_set_pte_list (struct frame_struct *fs, uint32_t *kpage, bool present)
 {
   struct list_elem *e;
   struct list *list = fs->pte_list;
-  for (e = list_begin (list); e != list_end (list); e = list_next (list))
+  for (e = list_begin (list); e != list_end (list); e = list_next (e))
   {
     struct pte_shared *pte_shared = list_entry (e, struct pte_shared, elem);
     if (present)
     {
-      pte_share->pte = pte_create_user (kpage, !(fs->flag & FS_READONLY));
+      bool writable = !(fs->flag & FS_READONLY);
+      bool dirty    = fs->flag & FS_DIRTY;
+      pte_share->pte = vtop (kpage) | PTE_P | (writable ? PTE_W : 0) | PTE_U | PTE_A | (dirty ? PTE_D : 0);
     }
     else 
       pte_share->pte &= ~PTE_P;
