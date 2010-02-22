@@ -198,6 +198,28 @@ sup_pt_fs_set_dirty (struct frame_struct *fs, bool dirty)
   return;
 }
 
+bool 
+sup_pt_fs_scan_and_set_pte (struct frame_struct *fs, bool value)
+{
+  bool flag = false;
+  struct list_elem *e;
+  struct list *list = fs->pte_list;
+  for (e = list_begin (list); e != list_end (list); e = list_next (list))
+  {
+    struct pte_shared *pte_shared = list_entry (e, struct pte_shared, elem);
+    if (pte_shared->pte & PTE_A == !value)
+    {
+      if (value)
+        pte_shard->pte |= PTE_A;
+      else 
+        pte_shard->pte &= ~PTE_A;
+      flag = true;
+    }
+  }
+  return flag;
+}
+
+
 void 
 sup_pt_fs_set_pte_list (struct frame_struct *fs, uint32_t *kpage, bool present)
 {
