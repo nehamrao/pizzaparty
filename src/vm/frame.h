@@ -22,6 +22,7 @@
 
 #define FS_READONLY		0x10
 #define FS_DIRTY		0x20
+#define FS_ACCESS		0x40
 #define FS_PINED		0x10000
 
 #define SECTOR_ERROR		SIZE_MAX
@@ -73,7 +74,7 @@ bool sup_pt_fs_is_dirty  (struct frame_struct *fs);
 void sup_pt_fs_set_pte_list (struct frame_struct *fs, uint32_t *kpage,
                              bool is_swapping_in);
 
-bool sup_pt_fs_scan_and_set_access (struct frame_struct *fs, bool value);
+bool sup_pt_fs_scan_and_reset_access (struct frame_struct *fs);
 
 uint32_t *sup_pt_evict_frame (void);
 
