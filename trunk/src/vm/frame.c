@@ -210,7 +210,7 @@ sup_pt_set_swap_out (struct frame_struct *fs,
   fs->vaddr = NULL;
   fs->sector_no = sector_no;
   fs->flag = (fs->flag & POSMASK) | (is_on_disk ? POS_DISK : POS_SWAP);
-  if (sup_pt_fs_is_dirty (fs))
+  if (sup_pt_fs_is_dirty (fs))  /* set dirty bit */
     fs->flag |= FS_DIRTY;
   else 
     fs->flag &= FS_DIRTY;
@@ -227,8 +227,8 @@ sup_pt_set_memory_map (uint32_t *pte, void *kpage)
   return true;
 }
 
-
-
+/* Determine if a frame is dirty
+   return true when any one of the pte's indicates dirty */
 bool
 sup_pt_fs_is_dirty (struct frame_struct *fs)
 {
@@ -242,6 +242,7 @@ sup_pt_fs_is_dirty (struct frame_struct *fs)
   }  
   return false;
 }
+
 
 void 
 sup_pt_fs_set_dirty (struct frame_struct *fs, bool dirty)
