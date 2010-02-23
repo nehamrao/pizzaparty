@@ -1,6 +1,11 @@
-// Frame.h
+#ifndef VM_FRAME_H 
+#define VM_FRAME_H
+
 #include <stdbool.h>
 #include <stdint.h>
+#include "devices/block.h"
+#include "list.h"
+#include "hash.h"
 
 #define POS_MEM			0x0;
 #define POS_SWAP 		0x1;
@@ -35,13 +40,13 @@ struct page_struct
 {
   uint32_t key;
   struct frame_struct *fs;
-  hash_elem elem;
+  struct hash_elem elem;
 };
 
 struct pte_shared
 {
   uint32_t *pte;
-  list_elem elem;
+  struct list_elem elem;
 };
 
 // Supplemental page table is global.
@@ -62,3 +67,4 @@ void sup_pt_fs_set_pte_list (struct frame_struct *fs, uint32_t *kpage, bool pres
 bool sup_pt_fs_scan_and_set_access (struct frame_struct *fs, bool value);
 uint32_t *sup_pt_evict_frame (void);
 
+#endif /* vm/frame.h */
