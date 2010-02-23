@@ -79,7 +79,7 @@ sup_pt_add (uint32_t *pd, void *upage, uint32_t *vaddr, int length,
     return false;
 
   /* Fill in sup_pt entry info */
-  ps->key = (int) pte;
+  ps->key = (uint32_t) pte;
   ps->fs = malloc (sizeof (struct frame_struct));
   if (ps->fs == NULL)
   {
@@ -127,7 +127,7 @@ sup_pt_shared_add (uint32_t *pd, void *upage, struct frame_struct *fs)
   ps = malloc (sizeof (struct page_struct));
   if (ps == NULL)
     return false;
-  ps->key = (int) pte;
+  ps->key = (uint32_t) pte;
   ps->fs = fs;
   hash_insert (&sup_pt, &ps->elem);
 
@@ -137,7 +137,6 @@ sup_pt_shared_add (uint32_t *pd, void *upage, struct frame_struct *fs)
     (struct pte_shared*)malloc (sizeof (struct pte_shared));
   if (pshr == NULL)
     {
-      free (ps->fs);
       free (ps);
       return false;
     }
@@ -197,6 +196,7 @@ sup_pt_set_swap_in (struct frame_struct *fs, void *kpage)
 {
   fs->vaddr = kpage;
   fs->flag = (fs->flag & POSMASK) | POS_MEM;
+
   sup_pt_fs_set_pte_list (fs, kpage, true);
 }
 
@@ -210,10 +210,7 @@ sup_pt_set_swap_out (struct frame_struct *fs,
   fs->vaddr = NULL;
   fs->sector_no = sector_no;
   fs->flag = (fs->flag & POSMASK) | (is_on_disk ? POS_DISK : POS_SWAP);
-  if (sup_pt_fs_is_dirty (fs))  /* set dirty bit */
-    fs->flag |= FS_DIRTY;
-  else 
-    fs->flag &= FS_DIRTY;
+
   sup_pt_fs_set_pte_list (fs, NULL, false);
 }
 
@@ -234,6 +231,11 @@ sup_pt_set_memory_map (uint32_t *pte, void *kpage)
 bool
 sup_pt_fs_is_dirty (struct frame_struct *fs)
 {
+  if (fs->flag & FS_DIRTY)
+    {
+      return true;
+    }
+
   struct list *list = &fs->pte_list;
   struct list_elem *e;
   for (e = list_begin (list); e != list_end (list); e = list_next (e))
@@ -241,10 +243,12 @@ sup_pt_fs_is_dirty (struct frame_struct *fs)
     struct pte_shared *pte_shared = list_entry (e, struct pte_shared, elem);
     if ((*pte_shared->pte & PTE_D) != 0)
       {
-        sup_pt_fs_set_dirty (fs, true);
+        /* Set frame_struct flag is enough for future query */
+        fs->flag |= FS_DIRTY;
         return true;
       }
   }
+
   return false;
 }
 
@@ -271,6 +275,11 @@ sup_pt_fs_set_dirty (struct frame_struct *fs, bool dirty)
   }
 }
 
+
+/* yinfeng **********************************************************
+   This function seems to run good, but do we really need this
+   single function solving two tasks at the same time?
+   Will it be better we separate them into scan() and set_access() ?*/
 bool 
 sup_pt_fs_scan_and_set_access (struct frame_struct *fs, bool value)
 {
@@ -292,48 +301,73 @@ sup_pt_fs_scan_and_set_access (struct frame_struct *fs, bool value)
   return flag;
 }
 
+/* Evict a frame
+   return the freed virtual address, which can be used by others */
 uint32_t *
 sup_pt_evict_frame ()
 {
   struct list *list = &frame_list;
   struct list_elem *e;
-     if (evict_pointer == NULL) 
-     {
-       e = list_begin (list); 
-       evict_pointer = list_entry (e, struct frame_struct, elem);
-     }
-  
-     while (1)
-     {
-        e = list_next (&evict_pointer->elem);
-        if (e == NULL)        
-          e = list_begin (list); 
-        evict_pointer = list_entry (e, struct frame_struct, elem);
-        if (evict_pointer->flag & FS_PINED)
-          continue;
-        if ((evict_pointer->flag & POSBITS) == POS_MEM)  // How about POS_ZERO?
-          if (sup_pt_fs_scan_and_set_access (evict_pointer, false))
-            break;
-     } 
-   uint32_t *vaddr = evict_pointer->vaddr;
-   swap_out (evict_pointer);
-   return vaddr;
+
+  /* Get evict_pointer, initialize if necessary */
+  if (evict_pointer == NULL) 
+    {
+      e = list_begin (list); 
+      evict_pointer = list_entry (e, struct frame_struct, elem);
+    }
+
+  while (true)
+    {
+      /* Circularly update evict_pointer around frame table */
+      e = list_next (&evict_pointer->elem);
+      if (e == NULL)        
+        e = list_begin (list); 
+      evict_pointer = list_entry (e, struct frame_struct, elem);
+
+      /* yinfeng **********************************************
+         Later make sure we set this FS_PINED somewhere else
+         maybe for use by synchronizaiton */
+      if ((evict_pointer->flag & FS_PINED) != 0)
+        continue;
+
+      /* Frames in memory are candidates for eviction */
+      if ((evict_pointer->flag & POSBITS) == POS_MEM)
+        if (sup_pt_fs_scan_and_set_access (evict_pointer, false))
+          break;
+
+      /* How about POS_ZERO? */
+      /* yinfeng **********************************************
+         first,
+         set relevant bits properly in frame_struct here
+         then,
+         deal with this case in swap out and in
+         when swap out
+             no need to actually write to swap
+             just update the linked pte's
+         when swap in
+             no need to actually read from disk
+             just update the linked pte's
+             and memset an all-zero page starting at vaddr */
+    } 
+  uint32_t *vaddr = evict_pointer->vaddr;
+  swap_out (evict_pointer);
+  return vaddr;
 }
 
 /* Set all pte's sharing this particular file_struct */
 void 
 sup_pt_fs_set_pte_list (struct frame_struct *fs, uint32_t *kpage,
-                        bool present)
+                        bool is_swapping_in)
 {
   struct list_elem *e;
   struct list *list = &fs->pte_list;
   for (e = list_begin (list); e != list_end (list); e = list_next (e))
   {
     struct pte_shared *pte_shared = list_entry (e, struct pte_shared, elem);
-    if (present)
+    if (is_swapping_in)
     {
-      bool writable = !(fs->flag & FS_READONLY);
-      bool dirty    = fs->flag & FS_DIRTY;
+      bool writable = *pte_shared->pte & PTE_W;
+      bool dirty    = *pte_shared->pte & PTE_D;
       *pte_shared->pte = vtop (kpage) | PTE_P | (writable ? PTE_W : 0) |
                          PTE_U | PTE_A | (dirty ? PTE_D : 0);
     }
