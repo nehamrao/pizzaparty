@@ -4,7 +4,6 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
-#include <user/syscall.h>
 #include "threads/synch.h"
 
 /* States in a thread's life cycle. */
@@ -109,7 +108,7 @@ struct thread
 
 /* yinfeng ******************************************************************/
     struct list mmap_list;              /* list of mmaped files */
-    mapid_t next_mapid;                 /* next available mmaped file id */
+    int next_mapid;                 /* next available mmaped file id */
     void* stack_bound;                  /* boundary of stack page */
 /* yinfeng ******************************************************************/
 
@@ -149,7 +148,7 @@ struct process_info
 /* */
 struct mmap_struct
   {
-    mapid_t mapid;                      /* mmaped file id */
+    int mapid;                      /* mmaped file id */
     struct file* p_file;                /* file descriptor
                                            obtained by file_reopen() */
     void* vaddr;                        /* begin of vaddr for mmap file */
