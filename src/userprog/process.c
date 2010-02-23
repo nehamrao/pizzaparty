@@ -10,6 +10,7 @@
 #include "userprog/tss.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
+#include "filesys/inode.h"
 #include "filesys/filesys.h"
 #include "threads/flags.h"
 #include "threads/init.h"
@@ -469,7 +470,7 @@ load_segment (struct file *file, off_t ofs, uint32_t *upage,
   ASSERT (ofs % PGSIZE == 0);
 
   file_seek (file, ofs);
-  block_sector_t sector_idx = file->inode->sector + ofs / BLOCK_SECTOR_SIZE;  // byte_to_sector (file->inode, ofs); 
+  block_sector_t sector_idx = inode_get_inumber (file_get_inode (file)) + ofs / BLOCK_SECTOR_SIZE;
   while (read_bytes > 0 || zero_bytes > 0) 
     {
       /* Calculate how to fill this page.
@@ -498,16 +499,25 @@ load_segment (struct file *file, off_t ofs, uint32_t *upage,
 //         palloc_free_page (kpage);
 //          return false; 
 //        }
-      uint32_t flag = (page_read_bytes > 0) ? POS_DISK : POS_ZERO 
-                      | TYPE_Executable | (writable ? 0 : FS_READONLY);
-      //block_sector_t sector_no = file->inode->sector + sector_idx;
+      //uint32_t flag = (page_read_bytes > 0) ? POS_DISK : POS_ZERO;
+      uint32_t flag = 0;
+      if (page_read_bytes > 0)
+        {
+          flag = POS_DISK;
+        }
+      else
+        {
+          flag = POS_ZERO;
+        }
+      flag |= TYPE_Executable;
+      flag |= (writable ? 0 : FS_READONLY);
       mark_page (upage, NULL, page_read_bytes, flag, sector_idx); 
 /****************************************************************************/
 
       /* Advance. */
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;
-      sector_idx += PGSIZE / BLOCK_SECTOR_SIZE; // Advance
+      sector_idx += PGSIZE / BLOCK_SECTOR_SIZE;
       upage += PGSIZE;
     }
   return true;
