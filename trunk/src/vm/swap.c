@@ -98,21 +98,30 @@ bool swap_out (struct frame_struct *pframe)
   }  
   
   if ((pframe->flag & POSBITS == POS_ZERO) && (pframe->flag & FS_DIRTY == 0))                         //Zero page needs not write
-    return true;
+    goto done;
 
  
-
-  if ((pframe->flag & FS_DIRTY) || (pframe->flag & TYPEBITS == TYPE_Stack))                 // Only dirty write to swap
+  if (pframe->flag & TYPE_MMFILE == POS_MEM)
+  {
+     device = fs_device;
+     sector_no = pframe->sector_no;
+     sup_pt_set_swap_out (pframe, sector_no, TRUE); 
+  }
+ 
+  else if ((pframe->flag & FS_DIRTY) || (pframe->flag & TYPEBITS == TYPE_Stack))                 // Only dirty write to swap
   {
     device = sp_device;
+    sector_no = bitmap_scan_and_flip (swap_free_map, 0, PGSIZE / BLOCK_SECTOR_SIZE, false);
+    sup_pt_set_swap_out (pframe, sector_no, FALSE); 
   }
+ 
   else            
   {
     sup_pt_set_swap_out (pframe, pframe->sector_no, TRUE); 
     return true;
   } 
 
-  sector_no = bitmap_scan_and_flip (swap_free_map, 0, PGSIZE / BLOCK_SECTOR_SIZE, false);
+  
   if (sector_no == BITMAP_ERROR)
   {
      printf ("Out of swap space!\n");
@@ -123,7 +132,7 @@ bool swap_out (struct frame_struct *pframe)
   {
     block_write (device, sector_no + i, kpage + BLOCK_SECTOR_SIZE * i); 
   }
-
-   sup_pt_set_swap_out (pframe, sector_no, FALSE); 
+     
+   
    return true;
 }
