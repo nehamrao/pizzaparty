@@ -7,24 +7,32 @@
 #include "threads/pte.h"
 #include "threads/malloc.h"
 
-static unsigned sup_pt_hash_func (const struct hash_elem *element, void *aux);
-static bool sup_pt_less_func (const struct hash_elem *a, const struct hash_elem *b, void *aux);
-
+/* Supplemental Page Table is global. */
 struct hash sup_pt;
+
+/* Frame Table */
 struct list frame_list;
 
+/* "Hand" in clock algorithm for frame eviction */
 struct frame_struct* evict_pointer;
 
+/* Helper functions for supplemental page table
+   which is implemented as a hash table */
+static unsigned sup_pt_hash_func (const struct hash_elem *element, void *aux);
+static bool sup_pt_less_func (const struct hash_elem *a,
+                              const struct hash_elem *b, void *aux);
+
+
+/* Given pd and virtual address, find the page table entry */
 uint32_t *
 sup_pt_pte_lookup (uint32_t *pd, const void *vaddr)
 {
   uint32_t *pt, *pde;
 
-  if (pd != NULL)
+  if (pd == NULL)
     return NULL;
 
-  /* Check for a page table for VADDR.
-     If one is missing, create one if requested. */
+  /* Check for a page table for VADDR. */
   pde = pd + pd_no (vaddr);
   if (*pde == 0) 
     return NULL;
@@ -45,29 +53,32 @@ sup_pt_ps_lookup (uint32_t *pte)
   return (e != NULL) ? hash_entry (e, struct page_struct, elem) : NULL;
 }
 
+/* Initialize supplemental page table and frame table */
 void 
 sup_pt_init (void)
 {
   hash_init (&sup_pt, sup_pt_hash_func, sup_pt_less_func, NULL);
   list_init (&frame_list);
   evict_pointer = NULL;
-  return;
 }
 
-
-/* Create an entry to sup_pt, according to the given info*/
+/* Create an entry to sup_pt, according to the given info */
 bool 
-sup_pt_add (uint32_t *pd, void *upage, uint32_t *vaddr, int length, uint32_t flag, block_sector_t sector_no)
+sup_pt_add (uint32_t *pd, void *upage, uint32_t *vaddr, int length,
+            uint32_t flag, block_sector_t sector_no)
 {
+  /* Find pte */
   uint32_t *pte = sup_pt_pte_lookup (pd, upage);
   if (pte == NULL)
     return false;
 
-  struct page_struct *ps;
-  ps = malloc (sizeof (struct page_struct));
+  /* Allocate page_struct, ie, a new entry in sup_pt */
+  struct page_struct *ps =
+    (struct page_struct*) malloc (sizeof (struct page_struct));
   if (ps == NULL)
     return false;
 
+  /* Fill in sup_pt entry info */
   ps->key = (int) pte;
   ps->fs = malloc (sizeof (struct frame_struct));
   if (ps->fs == NULL)
@@ -78,21 +89,27 @@ sup_pt_add (uint32_t *pd, void *upage, uint32_t *vaddr, int length, uint32_t fla
   ps->fs->vaddr = vaddr;
   ps->fs->length = length;
   ps->fs->flag = flag;
-  ps->fs->sector_no = sector_no; // Reuse possible
+  ps->fs->sector_no = sector_no; // ??? consider possible reuse
   list_init (&ps->fs->pte_list);
-  // perhaps lock needed here ***
-  struct pte_shared *p;
-  p = malloc (sizeof (struct pte_shared));
-  if (p == NULL)
+
+  // perhaps lock needed here *** ???
+  struct pte_shared *pshr =
+    (struct pte_shared*)malloc (sizeof (struct pte_shared));
+  if (pshr == NULL)
   {
     free (ps->fs);
     free (ps);
     return false;
   }
-  p->pte = pte;
-  list_push_back (&ps->fs->pte_list, &p->elem);
+  pshr->pte = pte;
+  list_push_back (&ps->fs->pte_list, &pshr->elem);
+
+  /* Register at supplemental page table */
   hash_insert (&sup_pt, &ps->elem);
+
+  /* Register at frame table */
   list_push_back (&frame_list, &ps->fs->elem);
+
   return true;
 }
 
@@ -100,9 +117,12 @@ sup_pt_add (uint32_t *pd, void *upage, uint32_t *vaddr, int length, uint32_t fla
 bool 
 sup_pt_shared_add (uint32_t *pd, void *upage, struct frame_struct *fs)
 {
+  /* Find pte */
   uint32_t *pte = sup_pt_pte_lookup (pd, upage);
   if (pte == NULL)
     return false;
+
+  /* Create page_struct and register in sup_pt */
   struct page_struct *ps;
   ps = malloc (sizeof (struct page_struct));
   if (ps == NULL)
@@ -110,10 +130,24 @@ sup_pt_shared_add (uint32_t *pd, void *upage, struct frame_struct *fs)
   ps->key = (int) pte;
   ps->fs = fs;
   hash_insert (&sup_pt, &ps->elem);
+
+  // perhaps lock needed here *** ???
+  /* Register share in frame table */
+  struct pte_shared* pshr =
+    (struct pte_shared*)malloc (sizeof (struct pte_shared));
+  if (pshr == NULL)
+    {
+      free (ps->fs);
+      free (ps);
+      return false;
+    }
+  pshr->pte = pte;
+  list_push_back (&ps->fs->pte_list, &pshr->elem);
+
   return true;
 }
 
-
+/* Delete an entry from sup_pt, given upage */
 bool
 sup_pt_find_and_delete (uint32_t *pd, void *upage)
 {
@@ -124,14 +158,15 @@ sup_pt_find_and_delete (uint32_t *pd, void *upage)
     return false;
 }
 
+/* Delete an entry from sup_pt, given pte */
 bool
 sup_pt_delete (uint32_t *pte)
 {
-  bool last_entry = false;
   struct page_struct *ps = sup_pt_ps_lookup (pte);
   if (ps == NULL)
     return false;
 
+  bool last_entry = false;
   struct list *list = &ps->fs->pte_list;
   struct list_elem *e;
   for (e = list_begin (list); e != list_end (list); e = list_next (e))
@@ -141,7 +176,7 @@ sup_pt_delete (uint32_t *pte)
     {
       list_remove (&pte_shared->elem);
       free (pte_shared);
-      if (list_empty (list))
+      if (list_empty (list))  /* Removed the last element */
       {
         last_entry = true;
         list_remove (&ps->fs->elem);
@@ -150,19 +185,36 @@ sup_pt_delete (uint32_t *pte)
       hash_delete (&sup_pt, &ps->elem);
       free (ps);
       break;
-    }    
+    }
   }
   return last_entry;
 }
 
-/* Map the page to frame in memeory. */
+/* Used when swap in
+   map the pages to frame in memeory */
 void
 sup_pt_set_swap_in (struct frame_struct *fs, void *kpage)
 {
   fs->vaddr = kpage;
-  fs->sector_no = SECTOR_ERROR;
   fs->flag = (fs->flag & POSMASK) | POS_MEM;
   sup_pt_fs_set_pte_list (fs, kpage, true);
+}
+
+/* Used when swap out
+   register flags relecting that the frame is no longer in mem */
+void
+sup_pt_set_swap_out (struct frame_struct *fs,
+                     block_sector_t sector_no,
+                     bool is_on_disk)
+{
+  fs->vaddr = NULL;
+  fs->sector_no = sector_no;
+  fs->flag = (fs->flag & POSMASK) | (is_on_disk ? POS_DISK : POS_SWAP);
+  if (sup_pt_fs_is_dirty (fs))
+    fs->flag |= FS_DIRTY;
+  else 
+    fs->flag &= FS_DIRTY;
+  sup_pt_fs_set_pte_list (fs, NULL, false);
 }
 
 bool 
@@ -175,18 +227,7 @@ sup_pt_set_memory_map (uint32_t *pte, void *kpage)
   return true;
 }
 
-void
-sup_pt_set_swap_out (struct frame_struct *fs, block_sector_t sector_no, bool is_on_disk)
-{
-  fs->vaddr = NULL;
-  fs->sector_no = sector_no;
-  fs->flag = (fs->flag & POSMASK) | (is_on_disk ? POS_DISK : POS_SWAP);
-  if (sup_pt_fs_is_dirty (fs))
-    fs->flag |= FS_DIRTY;
-  else 
-    fs->flag &= FS_DIRTY;
-  sup_pt_fs_set_pte_list (fs, NULL, false);
-}
+
 
 bool
 sup_pt_fs_is_dirty (struct frame_struct *fs)
@@ -261,9 +302,10 @@ sup_pt_evict_frame ()
    return vaddr;
 }
 
-
+/* Set all pte's sharing this particular file_struct */
 void 
-sup_pt_fs_set_pte_list (struct frame_struct *fs, uint32_t *kpage, bool present)
+sup_pt_fs_set_pte_list (struct frame_struct *fs, uint32_t *kpage,
+                        bool present)
 {
   struct list_elem *e;
   struct list *list = &fs->pte_list;
@@ -274,7 +316,8 @@ sup_pt_fs_set_pte_list (struct frame_struct *fs, uint32_t *kpage, bool present)
     {
       bool writable = !(fs->flag & FS_READONLY);
       bool dirty    = fs->flag & FS_DIRTY;
-      *pte_shared->pte = vtop (kpage) | PTE_P | (writable ? PTE_W : 0) | PTE_U | PTE_A | (dirty ? PTE_D : 0);
+      *pte_shared->pte = vtop (kpage) | PTE_P | (writable ? PTE_W : 0) |
+                         PTE_U | PTE_A | (dirty ? PTE_D : 0);
     }
     else 
       *pte_shared->pte &= ~PTE_P;
