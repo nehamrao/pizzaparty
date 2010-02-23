@@ -11,8 +11,8 @@ struct list frame_list;
 
 struct *frame_struct evict_pointer;
 
-static uint32_t *
-lookup_page (uint32_t *pd, const void *vaddr)
+uint32_t *
+sup_pt_pte_lookup (uint32_t *pd, const void *vaddr)
 {
   uint32_t *pt, *pde;
 
@@ -32,7 +32,7 @@ lookup_page (uint32_t *pd, const void *vaddr)
 
 /* Given pte, find the corresonding page_struct entry */
 struct page_struct *
-sup_pt_lookup (uint32_t *pte)
+sup_pt_ps_lookup (uint32_t *pte)
 {
   struct page_struct ps;
   struct hash_elem *e;
@@ -46,6 +46,7 @@ sup_pt_init (void)
 {
   hash_init (&sup_pt, sup_pt_hash_func, sup_pt_less_func, NULL);
   list_init (&frame_list);
+  evict_pointer = NULL;
   return;
 }
 
@@ -54,7 +55,7 @@ sup_pt_init (void)
 bool 
 sup_pt_add (uint32_t *pd, void *upage, uint32_t *vaddr, int length, uint32_t flag, block_sector_t sector_no)
 {
-  uint32_t *pte = lookup_page (pd, upage);
+  uint32_t *pte = sup_pt_pte_lookup (pd, upage);
   if (pte == NULL)
     return false;
 
@@ -95,7 +96,7 @@ sup_pt_add (uint32_t *pd, void *upage, uint32_t *vaddr, int length, uint32_t fla
 bool 
 sup_pt_shared_add (uint32_t *pd, void *upage, struct frame_struct *fs)
 {
-  uint32_t *pte = lookup_page (pd, upage);
+  uint32_t *pte = sup_pt_pte_lookup (pd, upage);
   if (pte == NULL)
     return false;
   struct page_struct *ps;
@@ -112,7 +113,7 @@ sup_pt_shared_add (uint32_t *pd, void *upage, struct frame_struct *fs)
 bool
 sup_pt_find_and_delete (uint32_t *pd, void *upage)
 {
-  uint32_t *pte = lookup_page (pd, upage);
+  uint32_t *pte = sup_pt_pte_lookup (pd, upage);
   if (pte != NULL)
     return sup_pt_delete (pte);
   else 
@@ -123,7 +124,7 @@ bool
 sup_pt_delete (uint32_t *pte)
 {
   bool last_entry = false;
-  struct page_struct *ps = sup_pt_lookup (pte);
+  struct page_struct *ps = sup_pt_ps_lookup (pte);
   if (ps == NULL)
     return false;
 
@@ -163,7 +164,7 @@ sup_pt_set_swap_in (struct frame_struct *fs, void *kpage)
 bool 
 sup_pt_set_memory_map (uint32_t *pte, void *kpage)
 {
-  struct page_struct *ps = sup_pt_lookup (pte);
+  struct page_struct *ps = sup_pt_ps_lookup (pte);
   if (ps == NULL)
     return false;
   sup_pt_set_swap_in (ps->fs, kpage);
@@ -239,15 +240,21 @@ sup_pt_evict_frame ()
        evict_pointer = list_entry (e, struct frame_struct, elem);
      }
   
-     do
+     while (1)
      {
         e = list_next (evict_pointer->elem);
         if (e == NULL)        
           e = list_begin (list); 
         evict_pointer = list_entry (e, struct frame_struct, elem);
-     } while (sup_pt_fs_scan_and_set_pte(evict_pointer,false))
+        if (evict_pointer->flag & FS_PINED)
+          continue;
+        if (evict_pointer->flag & POSBITS == POS_MEM)  // How about POS_ZERO?
+          if (sup_pt_fs_scan_and_set_pte (evict_pointer,false))
+            break;
+     } 
+   uint32_t *vaddr = evict_pointer->vaddr;
    swap_out (evict_pointer);
-   return evict_pointer->vaddr;
+   return vaddr;
 }
 
 

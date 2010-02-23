@@ -469,6 +469,7 @@ load_segment (struct file *file, off_t ofs, uint32_t *upage,
   ASSERT (ofs % PGSIZE == 0);
 
   file_seek (file, ofs);
+  block_sector_t sector_idx = byte_to_sector (file->inode, ofs); 
   while (read_bytes > 0 || zero_bytes > 0) 
     {
       /* Calculate how to fill this page.
@@ -497,13 +498,16 @@ load_segment (struct file *file, off_t ofs, uint32_t *upage,
 //         palloc_free_page (kpage);
 //          return false; 
 //        }
-      uint32_t flag = POS_DISK | TYPE_Executable | (writable ? 0 : FS_READONLY);
-      mark_page (upage, NULL, page_read_bytes, flag, sector); // Set flag *** sector = ?*********************************************************
+      uint32_t flag = (page_read_bytes > 0) ? POS_DISK : POS_ZERO 
+                      | TYPE_Executable | (writable ? 0 : FS_READONLY);
+      block_sector_t sector_no = file->inode->sector + sector_idx;
+      mark_page (upage, NULL, page_read_bytes, flag, sector_no); 
 /****************************************************************************/
 
       /* Advance. */
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;
+      sector_idx += PGSIZE / BLOCK_SECTOR_SIZE; // Advance
       upage += PGSIZE;
     }
   return true;
@@ -520,12 +524,12 @@ setup_stack (void **esp)
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
   if (kpage != NULL) 
     {
-/****************************************************************************/
-      sup_pt_add (thread_current ()->pagedir, ((uint8_t *) PHYS_BASE) - PGSIZE, kpage, PGSIZE, POS_MEM | TYPE_Stack, 0); // Set flag ***
-/****************************************************************************/
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
-        *esp = PHYS_BASE;
+      {
+        sup_pt_add (thread_current ()->pagedir, ((uint8_t *) PHYS_BASE) - PGSIZE, kpage, PGSIZE, POS_MEM | TYPE_Stack, SECTOR_ERROR);
+        *esp = PHYS_BASE; 
+      }
       else
         palloc_free_page (kpage);
     }
@@ -535,14 +539,14 @@ setup_stack (void **esp)
 
 /* install_page without actually loading in the data */
 static bool
-mark_page (void *upage, uint32_t *addr, int length, uint32_t flag, int sector)
+mark_page (void *upage, uint32_t *addr, int length, uint32_t flag, block_sector_t sector_no)
 {
   struct thread *t = thread_current ();
 
   if (pagedir_get_page (t->pagedir, upage) == NULL) 
     return false;
 
-  sup_pt_add (t->pagedir, upage, addr, length, flag, sector);
+  sup_pt_add (t->pagedir, upage, addr, length, flag, sector_no);
   return true;
 }
 /************************************************************************/
