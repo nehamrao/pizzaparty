@@ -266,7 +266,7 @@ struct Elf32_Phdr
 
 static bool setup_stack (void **esp);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
-static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
+static bool load_segment (struct file *file, off_t ofs, uint32_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
                           bool writable);
 
@@ -469,7 +469,7 @@ load_segment (struct file *file, off_t ofs, uint32_t *upage,
   ASSERT (ofs % PGSIZE == 0);
 
   file_seek (file, ofs);
-  block_sector_t sector_idx = byte_to_sector (file->inode, ofs); 
+  block_sector_t sector_idx = file->inode->sector + ofs / BLOCK_SECTOR_SIZE;  // byte_to_sector (file->inode, ofs); 
   while (read_bytes > 0 || zero_bytes > 0) 
     {
       /* Calculate how to fill this page.
@@ -500,8 +500,8 @@ load_segment (struct file *file, off_t ofs, uint32_t *upage,
 //        }
       uint32_t flag = (page_read_bytes > 0) ? POS_DISK : POS_ZERO 
                       | TYPE_Executable | (writable ? 0 : FS_READONLY);
-      block_sector_t sector_no = file->inode->sector + sector_idx;
-      mark_page (upage, NULL, page_read_bytes, flag, sector_no); 
+      //block_sector_t sector_no = file->inode->sector + sector_idx;
+      mark_page (upage, NULL, page_read_bytes, flag, sector_idx); 
 /****************************************************************************/
 
       /* Advance. */
