@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <syscall-nr.h>
+#include <round.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/malloc.h"
@@ -12,6 +13,7 @@
 #include "filesys/filesys.h"
 #include "userprog/process.h"
 #include "userprog/pagedir.h"
+#include "vm/frame.h"
 
 static void syscall_handler (struct intr_frame *);
 
@@ -492,7 +494,7 @@ _mmap (int fd, void *addr)
       return -1;
     }
   ms->p_file = new_file_ref;
-  list_push_back (&t->mmap_list, ms->elem);
+  list_push_back (&t->mmap_list, &ms->elem);
 
   /* Begin mapping, creating sup_pt entries */
   uint32_t read_bytes = f_size;

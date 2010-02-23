@@ -6,24 +6,24 @@
 #include <hash.h>
 #include "devices/block.h"
 
-#define POS_MEM			0x0;
-#define POS_SWAP 		0x1;
-#define POS_DISK		0x2;
-#define POS_ZERO		0x3;
-#define POSBITS			0x3;
-#define POSMASK			~POSBITS;
+#define POS_MEM			0x0
+#define POS_SWAP 		0x1
+#define POS_DISK		0x2
+#define POS_ZERO		0x3
+#define POSBITS			0x3
+#define POSMASK			~POSBITS
 
-#define TYPE_Executable 	0x4;
-#define TYPE_MMFile 		0x8;
-#define TYPE_Stack		0xc;  
-#define TYPEBITS		0xc;
-#define TYPEMASK		~TYPEBITS;
+#define TYPE_Executable 	0x4
+#define TYPE_MMFile 		0x8
+#define TYPE_Stack		0xc  
+#define TYPEBITS		0xc
+#define TYPEMASK		~TYPEBITS
 
-#define FS_READONLY		0x10;
-#define FS_DIRTY		0x20;
-#define FS_PINED		0x10000;
+#define FS_READONLY		0x10
+#define FS_DIRTY		0x20
+#define FS_PINED		0x10000
 
-#define SECTOR_ERROR		SIZE_MAX;
+#define SECTOR_ERROR		SIZE_MAX
 
 struct frame_struct
 {
@@ -65,5 +65,7 @@ void sup_pt_fs_set_pte_list (struct frame_struct *fs, uint32_t *kpage, bool pres
 
 bool sup_pt_fs_scan_and_set_access (struct frame_struct *fs, bool value);
 uint32_t *sup_pt_evict_frame (void);
+
+bool mark_page (void *upage, uint32_t *addr, int length, uint32_t flag, block_sector_t sector_no);
 
 #endif /* vm/frame.h */

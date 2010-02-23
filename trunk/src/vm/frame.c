@@ -293,4 +293,17 @@ sup_pt_less_func (const struct hash_elem *a, const struct hash_elem *b, void *au
   return psa->key < psb->key;
 }
 
+/* install_page without actually loading in the data */
+bool
+mark_page (void *upage, uint32_t *addr, int length, uint32_t flag, block_sector_t sector_no)
+{
+  struct thread *t = thread_current ();
+
+  if (pagedir_get_page (t->pagedir, upage) == NULL) 
+    return false;
+
+  sup_pt_add (t->pagedir, upage, addr, length, flag, sector_no);
+  return true;
+}
+
 

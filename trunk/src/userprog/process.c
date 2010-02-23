@@ -510,7 +510,15 @@ load_segment (struct file *file, off_t ofs, uint32_t *upage,
           flag = POS_ZERO;
         }
       flag |= TYPE_Executable;
-      flag |= (writable ? 0 : FS_READONLY);
+      if (writable)
+        {
+          flag |= 0;
+        }
+      else
+        {
+          flag |= FS_READONLY;
+        }
+      //flag |= (writable ? 0 : FS_READONLY);
       mark_page (upage, NULL, page_read_bytes, flag, sector_idx); 
 /****************************************************************************/
 
@@ -528,16 +536,20 @@ load_segment (struct file *file, off_t ofs, uint32_t *upage,
 static bool
 setup_stack (void **esp) 
 {
-  uint8_t *kpage;
+  uint32_t *kpage;
   bool success = false;
 
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
   if (kpage != NULL) 
     {
-      success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
+      void* addr = (void*)PHYS_BASE - PGSIZE;
+      success = install_page (addr, kpage, true);
       if (success)
       {
-        sup_pt_add (thread_current ()->pagedir, ((uint8_t *) PHYS_BASE) - PGSIZE, kpage, PGSIZE, POS_MEM | TYPE_Stack, SECTOR_ERROR);
+        uint32_t* pd = thread_current ()->pagedir;
+        uint32_t flag = POS_MEM;
+        flag |= TYPE_Stack;
+        sup_pt_add (pd, addr, kpage, PGSIZE, flag, SECTOR_ERROR);
         *esp = PHYS_BASE; 
       }
       else
@@ -545,22 +557,6 @@ setup_stack (void **esp)
     }
   return success;
 }
-/************************************************************************/
-
-/* install_page without actually loading in the data */
-static bool
-mark_page (void *upage, uint32_t *addr, int length, uint32_t flag, block_sector_t sector_no)
-{
-  struct thread *t = thread_current ();
-
-  if (pagedir_get_page (t->pagedir, upage) == NULL) 
-    return false;
-
-  sup_pt_add (t->pagedir, upage, addr, length, flag, sector_no);
-  return true;
-}
-/************************************************************************/
-
 /* Adds a mapping from user virtual address UPAGE to kernel
    virtual address KPAGE to the page table.
    If WRITABLE is true, the user process may modify the page;

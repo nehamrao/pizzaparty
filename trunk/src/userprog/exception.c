@@ -6,6 +6,8 @@
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/vaddr.h"
+#include "threads/pte.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -167,7 +169,7 @@ page_fault (struct intr_frame *f)
   {
     struct thread *t = thread_current ();
     uint32_t *pd, *pde, *pt, *pte;
-    pd = t->page_dir;
+    pd = t->pagedir;
     pde = pd + pd_no (fault_addr);
     if (*pde == 0)
     {
@@ -184,7 +186,7 @@ page_fault (struct intr_frame *f)
         fault_addr > t->stack_bound - PGSIZE)
       {
         uint32_t flag = POS_MEM | TYPE_Stack;
-        mark_page (upage, NULL, 0, flag, SECTOR_ERROR);
+        mark_page (fault_addr, NULL, 0, flag, SECTOR_ERROR);
         struct frame_struct* fs =
           (struct frame_struct*)malloc (sizeof (struct frame_struct));
         bool success = swap_in (fs);
