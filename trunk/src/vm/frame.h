@@ -60,4 +60,5 @@ bool sup_pt_fs_is_dirty (struct frame_struct *fs);
 void sup_pt_fs_set_pte_list (struct frame_struct *fs, uint32_t *kpage, bool present);
 
 bool sup_pt_fs_scan_and_set_access (struct frame_struct *fs, bool value);
+uint32_t *sup_pt_evict_frame (void);
 
