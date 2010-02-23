@@ -486,6 +486,11 @@ init_thread (struct thread *t, const char *name, int priority, bool is_kernel)
   /* Initialize file arrays */
   memset (t->array_files, 0, sizeof *(t->array_files));
 
+/* yinfeng ******************************************************************/
+  t->next_mapid = 0;
+  list_init (&t->mmap_list);
+/* yinfeng ******************************************************************/
+
   list_init (&t->child_list);
   t->executable = NULL;
 }
