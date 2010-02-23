@@ -119,8 +119,9 @@ process_wait (int child_pid)
   struct process_info *child_info;
 
   /* Scan the child_list, and look for the one that matches tid */
-  for (elem = list_begin (&cur->child_list); elem != list_end (&cur->child_list);
-    elem = list_next (elem))
+  for (elem = list_begin (&cur->child_list);
+       elem != list_end (&cur->child_list);
+       elem = list_next (elem))
     {  
       child_info = list_entry (elem, struct process_info, elem);
       if (child_info->pid == child_pid)
@@ -128,7 +129,7 @@ process_wait (int child_pid)
         if (child_info->already_waited)      /* If already waited, exit */
           return -1;
         child_info->already_waited = true;	
-        if (!child_info->is_alive)	     /* If not alive, return status */
+        if (!child_info->is_alive)           /* If not alive, return status */
           return child_info->exit_status;
         else
           sema_down (&child_info->sema_wait);/* Down the wait sema */

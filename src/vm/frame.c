@@ -16,11 +16,12 @@ struct list frame_list;
 /* "Hand" in clock algorithm for frame eviction */
 struct frame_struct* evict_pointer;
 
-/* Helper functions for supplemental page table
-   which is implemented as a hash table */
-static unsigned sup_pt_hash_func (const struct hash_elem *element, void *aux);
+/* Hash function used to organize supplemental page table as a hash table */
+static unsigned sup_pt_hash_func (const struct hash_elem *element,
+                                  void *aux UNUSED);
 static bool sup_pt_less_func (const struct hash_elem *a,
-                              const struct hash_elem *b, void *aux);
+                              const struct hash_elem *b,
+                              void *aux UNUSED);
 
 
 /* Given pd and virtual address, find the page table entry */
@@ -89,7 +90,7 @@ sup_pt_add (uint32_t *pd, void *upage, uint32_t *vaddr, int length,
   ps->fs->vaddr = vaddr;
   ps->fs->length = length;
   ps->fs->flag = flag;
-  ps->fs->sector_no = sector_no; // ??? consider possible reuse
+  ps->fs->sector_no = sector_no; // cannot reuse, mmap file need both
   list_init (&ps->fs->pte_list);
 
   // perhaps lock needed here *** ???
@@ -366,18 +367,22 @@ sup_pt_evict_frame ()
              just update the linked pte's
              and memset an all-zero page starting at vaddr */
     } 
+
   uint32_t *vaddr = evict_pointer->vaddr;
+
   swap_out (evict_pointer);
+
   return vaddr;
 }
 
-/* Set all pte's sharing this particular file_struct */
+/* Used when swapping in or out, determined by is_swapping_in,
+   set relevant bits for all pte's sharing this particular frame_struct */
 void 
 sup_pt_fs_set_pte_list (struct frame_struct *fs, uint32_t *kpage,
                         bool is_swapping_in)
 {
-  struct list_elem *e;
   struct list *list = &fs->pte_list;
+  struct list_elem *e;
   for (e = list_begin (list); e != list_end (list); e = list_next (e))
   {
     struct pte_shared *pte_shared = list_entry (e, struct pte_shared, elem);
@@ -394,32 +399,36 @@ sup_pt_fs_set_pte_list (struct frame_struct *fs, uint32_t *kpage,
   return;
 }
 
+/* Hash function used to organize supplemental page table as a hash table */
 static unsigned 
-sup_pt_hash_func (const struct hash_elem *elem, void *aux)
+sup_pt_hash_func (const struct hash_elem *elem, void *aux UNUSED)
 {
   struct page_struct *ps = hash_entry (elem, struct page_struct, elem);
-  return hash_int (ps->key);
+  return hash_int ((int)ps->key);
 }
 
+/* Hash function used to organize supplemental page table as a hash table */
 static bool
-sup_pt_less_func (const struct hash_elem *a, const struct hash_elem *b, void *aux)
+sup_pt_less_func (const struct hash_elem *a, const struct hash_elem *b,
+                  void *aux UNUSED)
 {
   struct page_struct *psa = hash_entry (a, struct page_struct, elem);
   struct page_struct *psb = hash_entry (b, struct page_struct, elem);
   return psa->key < psb->key;
 }
 
-/* install_page without actually loading in the data */
+/* install_page without actually reading data from disk */
 bool
-mark_page (void *upage, uint32_t *addr, int length, uint32_t flag, block_sector_t sector_no)
+mark_page (void *upage, uint32_t *addr,
+           int length, uint32_t flag,
+           block_sector_t sector_no)
 {
   struct thread *t = thread_current ();
 
   if (pagedir_get_page (t->pagedir, upage) == NULL) 
     return false;
 
-  sup_pt_add (t->pagedir, upage, addr, length, flag, sector_no);
-  return true;
+  return sup_pt_add (t->pagedir, upage, addr, length, flag, sector_no);
 }
 
 
