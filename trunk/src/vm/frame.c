@@ -217,6 +217,7 @@ sup_pt_set_swap_out (struct frame_struct *fs,
   sup_pt_fs_set_pte_list (fs, NULL, false);
 }
 
+/* ??? */
 bool 
 sup_pt_set_memory_map (uint32_t *pte, void *kpage)
 {
@@ -228,7 +229,8 @@ sup_pt_set_memory_map (uint32_t *pte, void *kpage)
 }
 
 /* Determine if a frame is dirty
-   return true when any one of the pte's indicates dirty */
+   return true when any one of the pte's indicates dirty
+   for consistency, set all other pte's dirty bits accordingly */
 bool
 sup_pt_fs_is_dirty (struct frame_struct *fs)
 {
@@ -238,20 +240,35 @@ sup_pt_fs_is_dirty (struct frame_struct *fs)
   {
     struct pte_shared *pte_shared = list_entry (e, struct pte_shared, elem);
     if ((*pte_shared->pte & PTE_D) != 0)
-      return true;
-  }  
+      {
+        sup_pt_fs_set_dirty (fs, true);
+        return true;
+      }
+  }
   return false;
 }
 
-
+/* Set frame_struct and all linked pte's dirty bits */
 void 
 sup_pt_fs_set_dirty (struct frame_struct *fs, bool dirty)
 {
+  /* Set frame_struct */
   if (dirty)
     fs->flag |= FS_DIRTY;
   else 
     fs->flag &= ~FS_DIRTY;
-  return;
+
+  /* Set pte's */
+  struct list *list = &fs->pte_list;
+  struct list_elem *e;
+  for (e = list_begin (list); e != list_end (list); e = list_next (e))
+  {
+    struct pte_shared *pte_shared = list_entry (e, struct pte_shared, elem);
+    if (dirty)
+      *pte_shared->pte |= PTE_D;
+    else 
+      *pte_shared->pte &= ~PTE_D;
+  }
 }
 
 bool 
