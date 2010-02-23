@@ -11,6 +11,7 @@
 #include "devices/input.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
+#include "filesys/inode.h"
 #include "userprog/process.h"
 #include "userprog/pagedir.h"
 #include "vm/frame.h"
@@ -455,7 +456,7 @@ _mmap (int fd, void *addr)
       addr == 0 ||                      /* at virtual address 0 */
       fd == STDIN_FILENO ||             /* stdin */
       fd == STDOUT_FILENO ||            /* stdout */
-      filesize (fd) == 0)               /* length file 0 */
+      _filesize (fd) == 0)               /* length file 0 */
     {
       /* Fail operation */
       return -1;
@@ -463,7 +464,7 @@ _mmap (int fd, void *addr)
 
   /* Also fail if overlap occurs */
   void *add = NULL;
-  int f_size = filesize (fd);
+  int f_size = _filesize (fd);
   for (add = addr; add < addr + f_size; addr += PGSIZE)
     {
       if (pagedir_get_page (t->pagedir, add) != NULL)
@@ -500,6 +501,7 @@ _mmap (int fd, void *addr)
   uint32_t read_bytes = f_size;
   uint32_t zero_bytes = ROUND_UP (read_bytes, PGSIZE) - read_bytes;
   void* upage = addr;
+  block_sector_t sector_idx = inode_get_inumber (file_get_inode (ms->p_file));
   while (read_bytes > 0 || zero_bytes > 0)
     {
       /* Calculate how to fill this page */
@@ -508,12 +510,13 @@ _mmap (int fd, void *addr)
 
       uint32_t flag = (page_read_bytes > 0 ? POS_DISK : POS_ZERO) | TYPE_MMFile;
       /* Deal with sector number !!!!!!!!!! */
-      mark_page (upage, NULL, page_read_bytes, flag, sector);
+      mark_page (upage, NULL, page_read_bytes, flag, sector_idx);
 
       /* Advance */
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;
       upage += PGSIZE;
+      sector_idx += PGSIZE / BLOCK_SECTOR_SIZE;
     }
 
   return mapid;
@@ -539,7 +542,7 @@ _munmap (mapid_t mapping)
           uint32_t write_bytes = f_size;
           //uint32_t zero_bytes = ROUND_UP (write_bytes, PGSIZE) - write_bytes;
           void* upage = ms->vaddr;
-          while (write_bytes > 0 || zero_bytes > 0)
+          while (write_bytes > 0)
             {
               /* Calculate how to fill this page */
               size_t page_write_bytes = write_bytes < PGSIZE ? write_bytes : PGSIZE;
@@ -547,8 +550,8 @@ _munmap (mapid_t mapping)
 
               /* Query dirty bits to decide write or not */
               uint32_t* pte = sup_pt_pte_lookup (t->pagedir, upage);
-              struct page_struct* ps = sup_pt_lookup (pte);
-              if (sup_pt_is_dirty (ps->fs))
+              struct page_struct* ps = sup_pt_ps_lookup (pte);
+              if (sup_pt_fs_is_dirty (ps->fs))
                 {
                   file_write_at (ms->p_file, upage, write_bytes, upage - ms->vaddr);
                 }
@@ -566,7 +569,7 @@ _munmap (mapid_t mapping)
         }
       else
         {
-          next_elem = list_next (&t->mmap_list);
+          next_elem = list_next (e);
         }
     }
 }

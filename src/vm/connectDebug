@@ -1,0 +1,1 @@
+pintos-gdb ./build/kernel.o
