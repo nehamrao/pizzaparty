@@ -9,6 +9,8 @@ static bool sup_pt_less_func (const struct hash_elem *a, const struct hash_elem 
 struct hash sup_pt;
 struct list frame_list;
 
+struct *frame_struct evict_pointer;
+
 static uint32_t *
 lookup_page (uint32_t *pd, const void *vaddr)
 {
@@ -224,6 +226,28 @@ sup_pt_fs_scan_and_set_access (struct frame_struct *fs, bool value)
     }
   }
   return flag;
+}
+
+uint32_t *
+sup_pt_evict_frame ()
+{
+  struct list *list = frame_list;
+  struct list_elem *e;
+     if (evict_pointer == NULL) 
+     {
+       e = list_begin (list); 
+       evict_pointer = list_entry (e, struct frame_struct, elem);
+     }
+  
+     do
+     {
+        e = list_next (evict_pointer->elem);
+        if (e == NULL)        
+          e = list_begin (list); 
+        evict_pointer = list_entry (e, struct frame_struct, elem);
+     } while (sup_pt_fs_scan_and_set_pte(evict_pointer,false))
+   swap_out (evict_pointer);
+   return evict_pointer->vaddr;
 }
 
 
