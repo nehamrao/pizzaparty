@@ -152,13 +152,6 @@ page_fault (struct intr_frame *f)
   user = (f->error_code & PF_U) != 0;
 
 /****************************************************************************/
-/*
-  if (user) 
-  {
-    kill (f);
-    return;
-  }
-*/
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
@@ -217,11 +210,18 @@ page_fault (struct intr_frame *f)
     }
 // If you implement sharing, the page's data might even already be in a page frame, but not in the page table.
     if (ps->fs->flag & POSBITS == POS_MEM) 
+    {
       *pte = pte_create_user (ps->fs->vaddr, !(ps->fs->flag & FS_READONLY));
-    else if (!swap_in (ps->fs))
+      return;
+    }
+    if (!swap_in (ps->fs) || !pagedir_set_page (pd, fault_addr, ps->fs->vaddr, !(ps->fs->flag & FS_READONLY)));
+    {
       kill (f);
+    }
   } else 
+  {
     kill (f);
+  }
   return;
 /****************************************************************************/
 }

@@ -98,7 +98,7 @@ bool swap_out (struct frame_struct *pframe)
   }  
   
   if ((pframe->flag & POSBITS == POS_ZERO) && (pframe->flag & FS_DIRTY == 0))                         //Zero page needs not write
-    goto done;
+    return true;
 
  
 
