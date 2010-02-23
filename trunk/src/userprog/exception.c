@@ -169,6 +169,7 @@ page_fault (struct intr_frame *f)
           user ? "user" : "kernel");
   kill (f);
 */
+
   if (user)
   {
     struct thread *t = thread_current ();
@@ -183,6 +184,24 @@ page_fault (struct intr_frame *f)
     pt = pde_get_pt (*pde);
     pte = pt + pt_no (fault_addr);
     struct page_struct *ps = sup_pt_lookup (pte);
+
+    /* Stack growth */
+    if (write &&
+        fault_addr < t->stack_bound &&
+        fault_addr > t->stack_bound - PGSIZE)
+      {
+        uint32_t flag = POS_MEM | TYPE_Stack;
+        mark_page (upage, NULL, 0, flag, SECTOR_ERROR);
+        struct frame_struct* fs =
+          (struct frame_struct*)malloc (sizeof (struct frame_struct));
+        bool success = swap_in (fs);
+        if (fs == NULL || !success)
+          {
+            free (fs);
+            kill (f);
+            return;
+          }
+      }
 
 // the user process should not expect any data at the address it was trying to access , or if the page lies within kernel virtual memory
     if (ps == NULL) 
