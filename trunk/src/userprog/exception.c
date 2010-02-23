@@ -4,10 +4,12 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include "userprog/gdt.h"
+#include "userprog/pagedir.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "threads/pte.h"
+#include "threads/malloc.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -178,7 +180,7 @@ page_fault (struct intr_frame *f)
     }
     pt = pde_get_pt (*pde);
     pte = pt + pt_no (fault_addr);
-    struct page_struct *ps = sup_pt_lookup (pte);
+    struct page_struct *ps = sup_pt_ps_lookup (pte);
 
     /* Stack growth */
     if (write &&
@@ -211,16 +213,17 @@ page_fault (struct intr_frame *f)
       return;
     }
 // If you implement sharing, the page's data might even already be in a page frame, but not in the page table.
-    if (ps->fs->flag & POSBITS == POS_MEM) 
+    if ((ps->fs->flag & POSBITS) == POS_MEM) 
     {
       *pte = pte_create_user (ps->fs->vaddr, !(ps->fs->flag & FS_READONLY));
       return;
     }
-    if (!swap_in (ps->fs) || !pagedir_set_page (pd, fault_addr, ps->fs->vaddr, !(ps->fs->flag & FS_READONLY)));
+    if (!swap_in (ps->fs) || !pagedir_set_page (pd, fault_addr, ps->fs->vaddr, !(ps->fs->flag & FS_READONLY)))
     {
       kill (f);
     }
-  } else 
+  }
+  else 
   {
     kill (f);
   }

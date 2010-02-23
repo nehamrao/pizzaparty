@@ -1,11 +1,16 @@
-#include <vm/swap.h>
-#include <vm/frame.h>
-#include <devices/block.h>
-#include <filesys/free-map.h>
-#include <filesys/inode.h>
-#include <userprog/pagedir.h>
-#include <lib/string.h>
-#include "lib/kernel/bitmap.h"
+#include <string.h>
+#include <bitmap.h>
+#include <stdio.h>
+#include <debug.h>
+#include "swap.h"
+#include "frame.h"
+#include "devices/block.h"
+#include "threads/palloc.h"
+#include "threads/vaddr.h"
+#include "filesys/filesys.h"
+#include "filesys/inode.h"
+#include "filesys/free-map.h"
+#include "userprog/pagedir.h"
 
 struct block *sp_device;
 static struct bitmap *swap_free_map;
@@ -30,7 +35,7 @@ bool swap_in (struct frame_struct *pframe)
   if (sector_no == SECTOR_ERROR)
   {
      printf ("Sector number invalid!\n");
-     return FALSE;
+     return false;
   }
   uint32_t *kpage = palloc_get_page (PAL_USER);
   if (kpage == NULL)
@@ -49,16 +54,16 @@ bool swap_in (struct frame_struct *pframe)
     device = fs_device;
   }*/
    
-  if (pframe->flag & POSBITS == POS_ZERO)
+  if ((pframe->flag & POSBITS) == POS_ZERO)
   {
     memset (kpage, 0, PGSIZE);                                // If zero page write  
-    goto done;
+    return true;
   } 
-  else if (pframe->flag & POSBITS == POS_DISK)
+  else if ((pframe->flag & POSBITS) == POS_DISK)
   {
     device = fs_device;                                               // On disk
   }
-  else if (pframe->flag & POSBITS == POS_SWAP)
+  else if ((pframe->flag & POSBITS) == POS_SWAP)
   {
     device = sp_device;                                               // On swap
   }
@@ -66,7 +71,7 @@ bool swap_in (struct frame_struct *pframe)
   {
     PANIC ("Eviction error, flag not set.\n");
     palloc_free_page (kpage);
-    return FALSE;
+    return false;
   }
   
   int i;
@@ -79,10 +84,9 @@ bool swap_in (struct frame_struct *pframe)
   
   if (device == sp_device)                               // Only swap disk needs free
     bitmap_set_multiple (swap_free_map, sector_no, PGSIZE / BLOCK_SECTOR_SIZE, false);
-   
-done:
+
   sup_pt_set_swap_in (pframe, kpage);              
-  return TRUE;
+  return true;
 }
 
 
@@ -94,30 +98,30 @@ bool swap_out (struct frame_struct *pframe)
   if (kpage == NULL)
   {
     printf ("Virtual address invalid!\n");             
-    return FALSE;
+    return false;
   }  
   
-  if ((pframe->flag & POSBITS == POS_ZERO) && (pframe->flag & FS_DIRTY == 0))                         //Zero page needs not write
+  if ((pframe->flag & POSBITS) == POS_ZERO && (pframe->flag & FS_DIRTY) == 0)                         //Zero page needs not write
     goto done;
 
  
-  if (pframe->flag & TYPE_MMFILE == POS_MEM)
+  if (pframe->flag & TYPE_MMFile == POS_MEM)
   {
      device = fs_device;
      sector_no = pframe->sector_no;
-     sup_pt_set_swap_out (pframe, sector_no, TRUE); 
+     sup_pt_set_swap_out (pframe, sector_no, true); 
   }
  
-  else if ((pframe->flag & FS_DIRTY) || (pframe->flag & TYPEBITS == TYPE_Stack))                 // Only dirty write to swap
+  else if ((pframe->flag & FS_DIRTY) || (pframe->flag & TYPEBITS) == TYPE_Stack)                 // Only dirty write to swap
   {
     device = sp_device;
     sector_no = bitmap_scan_and_flip (swap_free_map, 0, PGSIZE / BLOCK_SECTOR_SIZE, false);
-    sup_pt_set_swap_out (pframe, sector_no, FALSE); 
+    sup_pt_set_swap_out (pframe, sector_no, false); 
   }
  
   else            
   {
-    sup_pt_set_swap_out (pframe, pframe->sector_no, TRUE); 
+    sup_pt_set_swap_out (pframe, pframe->sector_no, true); 
     return true;
   } 
 
@@ -125,14 +129,16 @@ bool swap_out (struct frame_struct *pframe)
   if (sector_no == BITMAP_ERROR)
   {
      printf ("Out of swap space!\n");
-     return FALSE;
+     return false;
   }
 
+  int i = 0;
   for (i = 0; i < PGSIZE / BLOCK_SECTOR_SIZE; i++)
   {
     block_write (device, sector_no + i, kpage + BLOCK_SECTOR_SIZE * i); 
   }
      
-   
-   return true;
+done:
+  return true;
 }
+

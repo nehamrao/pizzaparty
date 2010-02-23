@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "frame.h"
 
 void swap_init (void);
 bool swap_in (struct frame_struct *pframe);
