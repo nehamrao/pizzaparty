@@ -173,9 +173,20 @@ sup_pt_delete (uint32_t *pte)
     struct pte_shared *pte_shared = list_entry (e, struct pte_shared, elem);
     if (pte_shared->pte == pte)
     {
+      /* Synch dirty and access bit */
+      if (*pte & PTE_D)
+        {
+          ps->fs->flag |= FS_DIRTY;
+        }
+      if (*pte & PTE_A)
+        {
+          ps->fs->flag |= FS_ACCESS;
+        }
+
+      /* Remove and release resource */
       list_remove (&pte_shared->elem);
       free (pte_shared);
-      if (list_empty (list))  /* Removed the last element */
+      if (list_empty (list))  /* Special case: removed the last element */
       {
         last_entry = true;
         list_remove (&ps->fs->elem);
@@ -244,6 +255,7 @@ sup_pt_fs_is_dirty (struct frame_struct *fs)
     if ((*pte_shared->pte & PTE_D) != 0)
       {
         /* Set frame_struct flag is enough for future query */
+        /* Refer to sup_pt_delete() for synching dirty bit */
         fs->flag |= FS_DIRTY;
         return true;
       }
@@ -279,9 +291,9 @@ sup_pt_fs_set_dirty (struct frame_struct *fs, bool dirty)
 /* yinfeng **********************************************************
    This function seems to run good, but do we really need this
    single function solving two tasks at the same time?
-   Will it be better we separate them into scan() and set_access() ?*/
+   Will it be better we separate them into scan() and reset_access() ?*/
 bool 
-sup_pt_fs_scan_and_set_access (struct frame_struct *fs, bool value)
+sup_pt_fs_scan_and_reset_access (struct frame_struct *fs)
 {
   bool flag = false;
   struct list_elem *e;
@@ -291,13 +303,18 @@ sup_pt_fs_scan_and_set_access (struct frame_struct *fs, bool value)
     struct pte_shared *pte_shared = list_entry (e, struct pte_shared, elem);
     if ((*pte_shared->pte & PTE_A) != 0)
     {
-      if (value)
-        *pte_shared->pte |= PTE_A;
-      else 
-        *pte_shared->pte &= ~PTE_A;
       flag = true;
+      *pte_shared->pte &= ~PTE_A;       /* Reset pte's */
     }
   }
+
+  /* Refer to sup_pt_delete() for synching access bit */
+  if (fs->flag & FS_ACCESS)
+  {
+    flag = true;
+    fs->flag &= ~FS_ACCESS;             /* Reset frame_struct */
+  }
+
   return flag;
 }
 
@@ -332,7 +349,7 @@ sup_pt_evict_frame ()
 
       /* Frames in memory are candidates for eviction */
       if ((evict_pointer->flag & POSBITS) == POS_MEM)
-        if (sup_pt_fs_scan_and_set_access (evict_pointer, false))
+        if (sup_pt_fs_scan_and_reset_access (evict_pointer))
           break;
 
       /* How about POS_ZERO? */
