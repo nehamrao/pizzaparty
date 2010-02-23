@@ -106,6 +106,11 @@ struct thread
     struct process_info *process_info;  /* Process metadata */
 #endif
 
+/* yinfeng ******************************************************************/
+    struct list mmap_list;              /* list of mmaped files */
+    mapid_t next_mapid;                 /* next available mmaped file id */
+/* yinfeng ******************************************************************/
+
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
@@ -116,6 +121,7 @@ struct file_info
     unsigned pos;                       /* position within file */
     struct file* p_file;                /* pointer to actual file structure */
   };
+
 /* global lock on function call to filesys.h and file.h */
 struct lock glb_lock_filesys;
 
@@ -136,6 +142,18 @@ struct process_info
     struct list_elem elem;		/* Element in child_list of its parent 
 					   thread */
   };
+
+/* yinfeng ******************************************************************/
+/* */
+struct mmap_struct
+  {
+    mapid_t mapid;                      /* mmaped file id */
+    struct file* p_file;                /* file descriptor
+                                           obtained by file_reopen() */
+    void* vaddr;                        /* begin of vaddr for mmap file */
+    struct list_elem elem;
+  };
+/* yinfeng ******************************************************************/
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.

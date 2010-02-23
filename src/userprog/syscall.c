@@ -15,7 +15,10 @@
 
 static void syscall_handler (struct intr_frame *);
 
-/* static methods providing service to lib/user/syscall.h */
+
+/**
+ * static methods providing service to lib/user/syscall.h
+ */
 static void _halt (void);
 static void _exit (int status);
 static pid_t _exec (const char *cmd_line);
@@ -29,10 +32,21 @@ static int _write (int fd, const void *buffer, unsigned size);
 static void _seek (int fd, unsigned position);
 static unsigned _tell (int fd);
 static void _close (int fd);
-static bool checkvaddr(const void * vaddr, unsigned size);
-static bool is_user_fd (int fd);
+/* yinfeng ******************************************************************/
+static mapid_t _mmap (int fd, void *addr);
+static void _munmap (mapid_t mapping);
+/* yinfeng ******************************************************************/
 
-/* static methods providing utility functions to above methods */
+
+/**
+ * static methods providing utility functions to above methods
+ */
+
+/* determine a valid virtual address given from user */
+static bool checkvaddr(const void * vaddr, unsigned size);
+
+/* determine if a valid user file descriptor */
+static bool is_user_fd (int fd);
 
 /* read arguments previously pushed on top of user stack, note this is 
    just a read with give offset, and stack pointer is not changed */
@@ -44,6 +58,11 @@ static int add_file (struct thread* t, struct file_info* f_info);
 
 /* Kill a process and exit with status -1 */
 static void kill_process (void);
+
+/* yinfeng ******************************************************************/
+/* allocate a new mmap file id */
+static mapid_t allocate_mapid (void);
+/* yinfeng ******************************************************************/
 
 
 void
@@ -131,6 +150,19 @@ syscall_handler (struct intr_frame *f)
         arg1 = read_stack (f, 4);
         _close ((int)arg1);
         break;
+
+/* yinfeng ******************************************************************/
+      case SYS_MMAP:
+        arg1 = read_stack (f, 4);
+        arg2 = read_stack (f, 4);
+        f->eax = (uint32_t)_mmap ((int)arg1, (void*)arg2);
+        break;
+
+      case SYS_MUNMAP:
+        arg1 = read_stack (f, 4);
+        _munmap ((mapid_t)arg1);
+        break;
+/* yinfeng ******************************************************************/
 
       default:
         kill_process ();    
@@ -409,6 +441,135 @@ _close (int fd)
   lock_release (&glb_lock_filesys);
 }
 
+/* yinfeng ******************************************************************/
+static mapid_t
+_mmap (int fd, void *addr)
+{
+  struct thread* t = thread_current ();
+
+  /* All the failed input conditions */
+  if (!is_user_vaddr (addr) ||          /* not valid user addr */
+      pg_ofs (addr) != 0 ||             /* not page aligned */
+      addr == 0 ||                      /* at virtual address 0 */
+      fd == STDIN_FILENO ||             /* stdin */
+      fd == STDOUT_FILENO ||            /* stdout */
+      filesize (fd) == 0)               /* length file 0 */
+    {
+      /* Fail operation */
+      return -1;
+    }
+
+  /* Also fail if overlap occurs */
+  void *add = NULL;
+  int f_size = filesize (fd);
+  for (add = addr; add < addr + f_size; addr += PGSIZE)
+    {
+      if (pagedir_get_page (t->pagedir, add) != NULL)
+        {
+          /* Fail operation */
+          return -1;
+        }
+    }
+  
+  /* Allocate mapid and record in mmap_list */
+  mapid_t mapid = allocate_mapid ();
+  struct mmap_struct* ms =
+    (struct mmap_struct*)malloc (sizeof (struct mmap_struct));
+  if (ms == NULL)
+    {
+      /* Fail operation */
+      return -1;
+    }
+  ms->mapid = mapid;
+  ms->vaddr = addr;
+  lock_acquire (&glb_lock_filesys);
+  struct file* new_file_ref = file_reopen (t->array_files[fd]->p_file);
+  lock_release (&glb_lock_filesys);
+  if (new_file_ref == NULL)
+    {
+      /* Fail operation */
+      free (ms);
+      return -1;
+    }
+  ms->p_file = new_file_ref;
+  list_push_back (&t->mmap_list, ms->elem);
+
+  /* Begin mapping, creating sup_pt entries */
+  uint32_t read_bytes = f_size;
+  uint32_t zero_bytes = ROUND_UP (read_bytes, PGSIZE) - read_bytes;
+  void* upage = addr;
+  while (read_bytes > 0 || zero_bytes > 0)
+    {
+      /* Calculate how to fill this page */
+      size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+      size_t page_zero_bytes = PGSIZE - page_read_bytes;
+
+      uint32_t flag = (page_read_bytes > 0 ? POS_DISK : POS_ZERO) | TYPE_MMFile;
+      /* Deal with sector number !!!!!!!!!! */
+      mark_page (upage, NULL, page_read_bytes, flag, sector);
+
+      /* Advance */
+      read_bytes -= page_read_bytes;
+      zero_bytes -= page_zero_bytes;
+      upage += PGSIZE;
+    }
+
+  return mapid;
+}
+/* yinfeng ******************************************************************/
+
+/* yinfeng ******************************************************************/
+static void
+_munmap (mapid_t mapping)
+{
+  struct thread* t = thread_current ();
+  struct list_elem* e = NULL;
+  struct list_elem* next_elem = NULL;
+  uint32_t f_size = 0;
+  for (e = list_begin (&t->mmap_list); e != list_end (&t->mmap_list);
+       e = next_elem)
+    {
+      struct mmap_struct* ms = list_entry (e, struct mmap_struct, elem);
+      if (ms->mapid == mapping)
+        {
+          /* Release pages, write back to disk in the process */
+          f_size = file_length (ms->p_file);
+          uint32_t write_bytes = f_size;
+          //uint32_t zero_bytes = ROUND_UP (write_bytes, PGSIZE) - write_bytes;
+          void* upage = ms->vaddr;
+          while (write_bytes > 0 || zero_bytes > 0)
+            {
+              /* Calculate how to fill this page */
+              size_t page_write_bytes = write_bytes < PGSIZE ? write_bytes : PGSIZE;
+              //size_t page_zero_bytes = PGSIZE - page_write_bytes;
+
+              /* Query dirty bits to decide write or not */
+              uint32_t* pte = sup_pt_pte_lookup (t->pagedir, upage);
+              struct page_struct* ps = sup_pt_lookup (pte);
+              if (sup_pt_is_dirty (ps->fs))
+                {
+                  file_write_at (ms->p_file, upage, write_bytes, upage - ms->vaddr);
+                }
+
+              /* Advance  */
+              write_bytes -= page_write_bytes;
+              //zero_bytes -= page_zero_bytes;
+              upage += PGSIZE;
+            }
+
+          file_close (ms->p_file);
+          list_remove (e);
+          free (ms);
+          break;
+        }
+      else
+        {
+          next_elem = list_next (&t->mmap_list);
+        }
+    }
+}
+/* yinfeng ******************************************************************/
+
 
 /* Utility functions */
 
@@ -480,4 +641,16 @@ is_user_fd (int fd)
    return ((fd >= 2) && (fd < 128) && (t->array_files[fd] != NULL));
 }
 
+/* yinfeng ******************************************************************/
+/* allocate a new mmap file id */
+static mapid_t
+allocate_mapid (void)
+{
+  struct thread *t = thread_current ();
 
+  mapid_t result = t->next_mapid;
+  t->next_mapid++;
+
+  return result;
+}
+/* yinfeng ******************************************************************/
