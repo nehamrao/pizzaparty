@@ -155,10 +155,6 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-  //printf ("Fault Addr = %lx\n", fault_addr);
-  //printf ("error code = %lx\n", f->error_code);
-  //printf ("notp = %ld, write = %ld, user = %ld\n", not_present, write, user);
-
   /* Access in kernel address space is not valid */
   if (!user) goto bad_page_fault;
 
@@ -171,7 +167,7 @@ page_fault (struct intr_frame *f)
     {
       goto bad_page_fault;
       /* TODO disable stack growth for now */
-#if 0
+#if 1
       /* Stack growth */
       if (write && fault_addr < t->stack_bound &&
           fault_addr > t->stack_bound - PGSIZE)
@@ -196,8 +192,6 @@ page_fault (struct intr_frame *f)
   /* Get supplementale page table entry */
   uint32_t *pt = pde_get_pt (*pde);
   uint32_t *pte = pt + pt_no (fault_addr);
-  //printf ("*pte = %lx\n", *pte);
-  //printf ("*pde = %lx\n", *pde);
   struct page_struct *ps = sup_pt_ps_lookup (pte);
 
   /* Address not present */
