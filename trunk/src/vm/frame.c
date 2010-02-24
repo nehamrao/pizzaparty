@@ -6,6 +6,8 @@
 #include "threads/thread.h"
 #include "threads/pte.h"
 #include "threads/malloc.h"
+#include "threads/palloc.h"
+#include "threads/pte.h"
 
 /* Supplemental Page Table is global. */
 struct hash sup_pt;
@@ -26,7 +28,7 @@ static bool sup_pt_less_func (const struct hash_elem *a,
 
 /* Given pd and virtual address, find the page table entry */
 uint32_t *
-sup_pt_pte_lookup (uint32_t *pd, const void *vaddr)
+sup_pt_pte_lookup (uint32_t *pd, const void *vaddr, bool create)
 {
   uint32_t *pt, *pde;
 
@@ -36,7 +38,18 @@ sup_pt_pte_lookup (uint32_t *pd, const void *vaddr)
   /* Check for a page table for VADDR. */
   pde = pd + pd_no (vaddr);
   if (*pde == 0) 
-    return NULL;
+  {
+    if (create)
+    {
+      pt = palloc_get_page (PAL_ZERO);
+      if (pt == NULL)
+        return NULL;
+      *pde = pde_create (pt);    
+    } else 
+    {
+      return NULL;
+    }
+  }
 
   /* Return the page table entry. */
   pt = pde_get_pt (*pde);
@@ -65,11 +78,11 @@ sup_pt_init (void)
 
 /* Create an entry to sup_pt, according to the given info */
 bool 
-sup_pt_add (uint32_t *pd, void *upage, uint32_t *vaddr, int length,
+sup_pt_add (uint32_t *pd, void *upage, uint32_t *vaddr, size_t length,
             uint32_t flag, block_sector_t sector_no)
 {
   /* Find pte */
-  uint32_t *pte = sup_pt_pte_lookup (pd, upage);
+  uint32_t *pte = sup_pt_pte_lookup (pd, upage, true);
   if (pte == NULL)
     return false;
 
@@ -90,7 +103,8 @@ sup_pt_add (uint32_t *pd, void *upage, uint32_t *vaddr, int length,
   ps->fs->vaddr = vaddr;
   ps->fs->length = length;
   ps->fs->flag = flag;
-  ps->fs->sector_no = sector_no; // cannot reuse, mmap file need both
+  ps->fs->sector_no = sector_no; 
+
   list_init (&ps->fs->pte_list);
 
   // perhaps lock needed here *** ???
@@ -119,7 +133,7 @@ bool
 sup_pt_shared_add (uint32_t *pd, void *upage, struct frame_struct *fs)
 {
   /* Find pte */
-  uint32_t *pte = sup_pt_pte_lookup (pd, upage);
+  uint32_t *pte = sup_pt_pte_lookup (pd, upage, true);
   if (pte == NULL)
     return false;
 
@@ -133,7 +147,7 @@ sup_pt_shared_add (uint32_t *pd, void *upage, struct frame_struct *fs)
   hash_insert (&sup_pt, &ps->elem);
 
   // perhaps lock needed here *** ???
-  /* Register share in frame table */
+  /* Register share memory in frame table */
   struct pte_shared* pshr =
     (struct pte_shared*)malloc (sizeof (struct pte_shared));
   if (pshr == NULL)
@@ -151,7 +165,7 @@ sup_pt_shared_add (uint32_t *pd, void *upage, struct frame_struct *fs)
 bool
 sup_pt_find_and_delete (uint32_t *pd, void *upage)
 {
-  uint32_t *pte = sup_pt_pte_lookup (pd, upage);
+  uint32_t *pte = sup_pt_pte_lookup (pd, upage, false);
   if (pte != NULL)
     return sup_pt_delete (pte);
   else 
@@ -431,7 +445,7 @@ mark_page (void *upage, uint32_t *addr,
 {
   struct thread *t = thread_current ();
 
-  if (pagedir_get_page (t->pagedir, upage) == NULL) 
+  if (!(pagedir_get_page (t->pagedir, upage) == NULL))
     return false;
 
   return sup_pt_add (t->pagedir, upage, addr, length, flag, sector_no);
