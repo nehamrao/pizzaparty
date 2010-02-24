@@ -54,32 +54,25 @@ bool swap_in (struct frame_struct *pframe)
       return false;
     }
   }
- 
-  /*if ((pframe->flag & POS_MEM)||(pframe->flag&POS_EXEC)) Need change
-  {
-    device = fs_device;
-  }*/
+  
+  uint32_t pos = pframe->flag & POSBITS;
+  uint32_t is_all_zero = pframe->flag & FS_ZERO;
    
   /* If zero page, just write a page of 0's */
-  if ((pframe->flag & POSBITS) == POS_ZERO)
+  if (is_all_zero)
   {
     memset (kpage, 0, PGSIZE);
     sup_pt_set_swap_in (pframe, kpage);
     return true;
   } 
-//  if ((pframe->flag & POSBITS) == POS_MEM)
-//    {
-//      pframe->flag = (pframe->flag & POSMASK) | POS_DISK;
-//    } 
-
 
   /* On disk */
-  if ((pframe->flag & POSBITS) == POS_DISK)
+  if (pos == POS_DISK)
   {
     device = fs_device;
   }
   /* On swap */
-  else if ((pframe->flag & POSBITS) == POS_SWAP)
+  else if (pos == POS_SWAP)
   {
     device = sp_device;
   }
@@ -125,41 +118,60 @@ bool swap_out (struct frame_struct *pframe)
     return false;
   }  
 
+  uint32_t type = pframe->flag & TYPEBITS;
+  uint32_t dirty = sup_pt_fs_is_dirty (pframe);
+  uint32_t is_all_zero = pframe->flag & FS_ZERO;
+
+  ASSERT (pframe->flag & POSBITS == POS_MEM);
+
   /* Zero and not dirty page need not swap out */
-  if ((pframe->flag & POSBITS) == POS_ZERO )
-    if ((pframe->flag & FS_DIRTY) == 0)
-      goto done;
-
-  /* Write memory mapped file to disk */
-  if ((pframe->flag & TYPE_MMFile) &&
-      (pframe->flag & POSBITS) == POS_MEM)
+  if (is_all_zero && !dirty)
   {
-    device = fs_device;
-    sector_no = pframe->sector_no;
-    
-    sup_pt_set_swap_out (pframe, pframe->sector_no, true); 
-
-    goto write;
+    pframe->flag = (pframe->flag & POSMASK) | POS_DISK;
+    goto done;
   }
-  /* Write dirty or stack pages to swap */
-  else if ((pframe->flag & FS_DIRTY) ||
-           (pframe->flag & TYPEBITS) == TYPE_Stack)
+  else 
+  {
+    pframe->flag &= ~FS_ZERO;
+  }
+
+  if (type == TYPE_Stack)
   {
     device = sp_device;
     sector_no = bitmap_scan_and_flip (swap_free_map, 0,
                                       PGSIZE / BLOCK_SECTOR_SIZE, false);
 
     sup_pt_set_swap_out (pframe, sector_no, false); 
-
     goto write;
   }
-  /* The same content as on disk, no need to write */
-  else
+    
+  /* Write memory mapped file to disk */
+  if (type == TYPE_MMFile)
   {
+    device = fs_device;
+    sector_no = pframe->sector_no;    
     sup_pt_set_swap_out (pframe, pframe->sector_no, true); 
-    goto done;
-  } 
+    if (dirty)
+      goto write;
+  }
+  /* */
+  if (type == TYPE_Executable) 
+  {
+    if (dirty)
+    {
+      device = sp_device;
+      sector_no = bitmap_scan_and_flip (swap_free_map, 0,
+                                        PGSIZE / BLOCK_SECTOR_SIZE, false);
 
+      sup_pt_set_swap_out (pframe, sector_no, false); 
+      goto write;
+    } else
+    {
+      sup_pt_set_swap_out (pframe, pframe->sector_no, true); 
+      goto done;
+    }
+  }
+  ASSERT ("Reach places which should never be reached"); 
 
 write:
   /* Out of swap space */

@@ -7,10 +7,9 @@
 #include <hash.h>
 #include "devices/block.h"
 
-#define POS_MEM			0x0
 #define POS_SWAP 		0x1
 #define POS_DISK		0x2
-#define POS_ZERO		0x3
+#define POS_MEM			0x3
 #define POSBITS			0x3
 #define POSMASK			~POSBITS
 
@@ -23,6 +22,8 @@
 #define FS_READONLY		0x10
 #define FS_DIRTY		0x20
 #define FS_ACCESS		0x40
+#define FS_ZERO			0x80
+
 #define FS_PINED		0x10000
 
 #define SECTOR_ERROR		SIZE_MAX

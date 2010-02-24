@@ -510,7 +510,7 @@ _mmap (int fd, void *addr)
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
       /* Add sup_pt entry */
-      uint32_t flag = (page_read_bytes > 0 ? POS_DISK : POS_ZERO) | TYPE_MMFile;
+      uint32_t flag = (page_read_bytes > 0 ? 0 : FS_ZERO) | POS_DISK | TYPE_MMFile;
       mark_page (upage, NULL, page_read_bytes, flag, sector_idx);
 
       /* Advance */

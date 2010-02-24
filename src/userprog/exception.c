@@ -173,7 +173,7 @@ page_fault (struct intr_frame *f)
           fault_addr > t->stack_bound - PGSIZE)
         {
           /* Add a sup_pt entry for this newly added stack page */
-          uint32_t flag = POS_ZERO | TYPE_Stack;
+          uint32_t flag = POS_MEM | TYPE_Stack | FS_ZERO;
           bool success_pt_add = sup_pt_add (t->pagedir,
             t->stack_bound - PGSIZE, NULL, 0, flag, SECTOR_ERROR);
     
