@@ -15,32 +15,37 @@
 struct block *sp_device;
 static struct bitmap *swap_free_map;
 
-
+/* Initialize swap device and swap table */
 void swap_init ()
 {
-  sp_device = block_get_role (BLOCK_SWAP);                  //swap device pointer
-  swap_free_map = bitmap_create (block_size (sp_device));   // Bitmap for swap
+  /*swap device pointer */
+  sp_device = block_get_role (BLOCK_SWAP);
+
+  /* Bitmap for swap */
+  swap_free_map = bitmap_create (block_size (sp_device));
   if (swap_free_map == NULL)
   {
      PANIC ("Out of kernel memory pool\n");
   }
 }
 
-
+/* swap in */
 bool swap_in (struct frame_struct *pframe)
 {
   struct block *device;
-  block_sector_t sector_no = pframe->sector_no;
   size_t length = pframe->length;
+  block_sector_t sector_no = pframe->sector_no;
   if (sector_no == SECTOR_ERROR)
   {
-     printf ("Sector number invalid!\n");
+     /* Sector number invalid */
      return false;
   }
+
+  /* Get a frame, from memory or by evict another frame */
   uint32_t *kpage = palloc_get_page (PAL_USER);
   if (kpage == NULL)
   {
-    // To implement eviction
+    /* Evict to get a frame */
     kpage = sup_pt_evict_frame ();
     if (kpage == NULL)
     {
@@ -54,18 +59,21 @@ bool swap_in (struct frame_struct *pframe)
     device = fs_device;
   }*/
    
+  /* If zero page, just write a page of 0's */
   if ((pframe->flag & POSBITS) == POS_ZERO)
   {
-    memset (kpage, 0, PGSIZE);                                // If zero page write  
+    memset (kpage, 0, PGSIZE);
     return true;
   } 
+  /* On disk */
   else if ((pframe->flag & POSBITS) == POS_DISK)
   {
-    device = fs_device;                                               // On disk
+    device = fs_device;
   }
+  /* On swap */
   else if ((pframe->flag & POSBITS) == POS_SWAP)
   {
-    device = sp_device;                                               // On swap
+    device = sp_device;
   }
   else
   {

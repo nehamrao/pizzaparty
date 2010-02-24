@@ -186,26 +186,25 @@ page_fault (struct intr_frame *f)
     pt = pde_get_pt (*pde);
     pte = pt + pt_no (fault_addr);
 
-    /* Get supplementale page table entry */
-    struct page_struct *ps = sup_pt_ps_lookup (pte);
-
     /* Stack growth */
     if (write &&
         fault_addr < t->stack_bound &&
         fault_addr > t->stack_bound - PGSIZE)
       {
-        uint32_t flag = POS_MEM | TYPE_Stack;
-        mark_page (fault_addr, NULL, 0, flag, SECTOR_ERROR);
-        struct frame_struct* fs =
-          (struct frame_struct*)malloc (sizeof (struct frame_struct));
-        bool success = swap_in (fs);
-        if (fs == NULL || !success)
+        uint32_t flag = POS_ZERO | TYPE_Stack;
+        t->stack_bound -= PGSIZE;
+        bool success_pt_add = sup_pt_add (t->pagedir,
+          t->stack_bound - PGSIZE, NULL, 0, flag, SECTOR_ERROR);
+        if (!success)
           {
-            free (fs);
+            /* TODO How to reverse the failed add to sup_pt */
             kill (f);
-            return;
           }
+        return;
       }
+    
+    /* Get supplementale page table entry */
+    struct page_struct *ps = sup_pt_ps_lookup (pte);
 
     /* User process should not access data at address 0 */
     if (ps == NULL) 

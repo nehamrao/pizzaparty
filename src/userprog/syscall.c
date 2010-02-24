@@ -467,6 +467,7 @@ _mmap (int fd, void *addr)
   int f_size = _filesize (fd);
   for (add = addr; add < addr + f_size; addr += PGSIZE)
     {
+      /* TODO how to determine exactly overlap */
       if (pagedir_get_page (t->pagedir, add) != NULL)
         {
           /* Fail operation */
@@ -556,6 +557,7 @@ _munmap (mapid_t mapping)
               if (sup_pt_fs_is_dirty (ps->fs))
                 {
                   file_write_at (ms->p_file, upage, write_bytes, upage - ms->vaddr);
+                  /* TODO un-dirty this page */
                 }
 
               /* Advance  */
