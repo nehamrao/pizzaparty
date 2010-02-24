@@ -87,7 +87,7 @@ bool swap_in (struct frame_struct *pframe)
   int i;
   for (i = 0; i < PGSIZE / BLOCK_SECTOR_SIZE; i++)
   {
-    block_read (device, sector_no + i, kpage + BLOCK_SECTOR_SIZE * i); 
+    block_read (device, sector_no + i, ((uint8_t*)kpage) + BLOCK_SECTOR_SIZE * i); 
   }
 
   /* Set remaining of the page to 0, only necessary for disk */
@@ -161,7 +161,7 @@ write:
   int i = 0;
   for (i = 0; i < PGSIZE / BLOCK_SECTOR_SIZE; i++)
   {
-    block_write (device, sector_no + i, kpage + BLOCK_SECTOR_SIZE * i); 
+    block_write (device, sector_no + i, ((uint8_t*)kpage) + BLOCK_SECTOR_SIZE * i); 
   }
   return true;
 
