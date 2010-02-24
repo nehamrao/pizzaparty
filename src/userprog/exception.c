@@ -236,7 +236,7 @@ page_fault (struct intr_frame *f)
     /* swap in and setup page */
     bool success_swap_in = swap_in (ps->fs);
     bool success_set_page =
-      pagedir_set_page (pd, fault_addr, ps->fs->vaddr,
+      pagedir_set_page (pd, pg_round_down (fault_addr), ps->fs->vaddr,
                         !(ps->fs->flag & FS_READONLY));
     if (!success_swap_in || !success_set_page)
     {

@@ -549,8 +549,10 @@ _munmap (mapid_t mapping)
               //size_t page_zero_bytes = PGSIZE - page_write_bytes;
 
               /* Query dirty bits to decide write or not */
-              uint32_t* pte = sup_pt_pte_lookup (t->pagedir, upage);
+              uint32_t* pte = sup_pt_pte_lookup (t->pagedir, upage, false);
+              //******************************************************************** what if pte == NULL here? 
               struct page_struct* ps = sup_pt_ps_lookup (pte);
+	      //******************************************************************** what if ps == NULL here? 
               if (sup_pt_fs_is_dirty (ps->fs))
                 {
                   file_write_at (ms->p_file, upage, write_bytes, upage - ms->vaddr);

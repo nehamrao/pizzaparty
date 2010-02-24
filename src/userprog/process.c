@@ -22,8 +22,8 @@
 #include "threads/malloc.h"
 #include "vm/frame.h"
 
-static thread_func start_process NO_RETURN;
-static bool load (const char *cmdline, void (**eip) (void), void **esp);
+thread_func start_process NO_RETURN;
+//static bool load (const char *cmdline, void (**eip) (void), void **esp);
 static bool argument_passing (const char *cmd_line, void **esp);
 static bool push_4byte (char** p_stack, void* val, void** esp);
 static void get_prog_file_name (const char* cmd_line, char* prog_file_name);
@@ -62,7 +62,7 @@ process_execute (const char *cmd_line)
 
 /* A thread function that loads a user process and starts it
    running. */
-static void
+void								//***************************************************
 start_process (void *file_name_)
 {
   char *file_name = file_name_;
@@ -266,11 +266,11 @@ struct Elf32_Phdr
 #define PF_W 2          /* Writable. */
 #define PF_R 4          /* Readable. */
 
-static bool setup_stack (void **esp);
+//static bool setup_stack (void **esp);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
-static bool load_segment (struct file *file, off_t ofs, uint32_t *upage,
-                          uint32_t read_bytes, uint32_t zero_bytes,
-                          bool writable);
+//static bool load_segment (struct file *file, off_t ofs, uint32_t *upage,//***************************************************
+//                          uint32_t read_bytes, uint32_t zero_bytes,
+//                          bool writable);
 
 /* Loads an ELF executable from FILE_NAME into the current thread.
    Stores the executable's entry point into *EIP
@@ -401,7 +401,7 @@ load (const char *cmd_line, void (**eip) (void), void **esp)
 
 /* load() helpers. */
 
-static bool install_page (void *upage, void *kpage, bool writable);
+//static bool install_page (void *upage, void *kpage, bool writable);	//***************************************************
 
 /* Checks whether PHDR describes a valid, loadable segment in
    FILE and returns true if so, false otherwise. */
@@ -462,7 +462,7 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
 
    Return true if successful, false if a memory allocation error
    or disk read error occurs. */
-static bool
+bool									//***************************************************
 load_segment (struct file *file, off_t ofs, uint32_t *upage,
               uint32_t read_bytes, uint32_t zero_bytes, bool writable) 
 {
@@ -520,7 +520,8 @@ load_segment (struct file *file, off_t ofs, uint32_t *upage,
           flag |= FS_READONLY;
         }
       //flag |= (writable ? 0 : FS_READONLY);
-      mark_page (upage, NULL, page_read_bytes, flag, sector_idx); 
+      if (!mark_page (upage, NULL, page_read_bytes, flag, sector_idx))
+        return false;
 /****************************************************************************/
 
       /* Advance. */
@@ -534,7 +535,7 @@ load_segment (struct file *file, off_t ofs, uint32_t *upage,
 
 /* Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. */
-static bool
+bool   /****************************************************************************/
 setup_stack (void **esp) 
 {
   uint32_t *kpage;
@@ -544,17 +545,20 @@ setup_stack (void **esp)
   if (kpage != NULL) 
     {
       void* addr = (void*)PHYS_BASE - PGSIZE;
+
+      uint32_t* pd = thread_current ()->pagedir;
+      uint32_t flag = POS_MEM | TYPE_Stack;
+      mark_page (addr, kpage, PGSIZE, flag, SECTOR_ERROR);
       success = install_page (addr, kpage, true);
       if (success)
       {
-        uint32_t* pd = thread_current ()->pagedir;
-        uint32_t flag = POS_MEM;
-        flag |= TYPE_Stack;
-        sup_pt_add (pd, addr, kpage, PGSIZE, flag, SECTOR_ERROR);
         *esp = PHYS_BASE; 
       }
       else
+      {
+        sup_pt_find_and_delete (pd, addr);
         palloc_free_page (kpage);
+      }
     }
   return success;
 }
@@ -567,7 +571,7 @@ setup_stack (void **esp)
    with palloc_get_page().
    Returns true on success, false if UPAGE is already mapped or
    if memory allocation fails. */
-static bool
+bool
 install_page (void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current ();
