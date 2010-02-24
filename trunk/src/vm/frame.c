@@ -238,8 +238,8 @@ sup_pt_set_memory_map (uint32_t *pte, void *kpage)
 }
 
 /* Determine if a frame is dirty
-   return true when any one of the pte's indicates dirty
-   for consistency, set all other pte's dirty bits accordingly */
+   return true when fs->flag indicates dirty or
+          any one of the pte's indicates dirty */
 bool
 sup_pt_fs_is_dirty (struct frame_struct *fs)
 {
@@ -337,9 +337,14 @@ sup_pt_evict_frame ()
   while (true)
     {
       /* Circularly update evict_pointer around frame table */
-      e = list_next (&evict_pointer->elem);
-      if (e == NULL)        
-        e = list_begin (list); 
+      if (e != list_end (list))
+        {
+          e = list_next (&evict_pointer->elem);
+        }
+      else
+        {
+          e = list_begin (list); 
+        }
       evict_pointer = list_entry (e, struct frame_struct, elem);
 
       /* yinfeng **********************************************
@@ -390,8 +395,9 @@ sup_pt_fs_set_pte_list (struct frame_struct *fs, uint32_t *kpage,
     {
       bool writable = *pte_shared->pte & PTE_W;
       bool dirty    = *pte_shared->pte & PTE_D;
-      *pte_shared->pte = vtop (kpage) | PTE_P | (writable ? PTE_W : 0) |
-                         PTE_U | PTE_A | (dirty ? PTE_D : 0);
+
+      *pte_shared->pte = pte_create_user (kpage, writable);
+      *pte_shared->pte |= PTE_A | (dirty ? PTE_D : 0);
     }
     else 
       *pte_shared->pte &= ~PTE_P;
