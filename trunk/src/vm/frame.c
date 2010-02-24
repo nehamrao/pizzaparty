@@ -8,6 +8,7 @@
 #include "threads/malloc.h"
 #include "threads/palloc.h"
 #include "threads/pte.h"
+#include "threads/init.h"
 
 /* Supplemental Page Table is global. */
 struct hash sup_pt;
@@ -78,13 +79,11 @@ sup_pt_init (void)
 
 /* Create an entry to sup_pt, according to the given info */
 bool 
-sup_pt_add (uint32_t *pd, void *upage, uint32_t *vaddr, size_t length,
+sup_pt_add (uint32_t *pd, void *upage, uint8_t *vaddr, size_t length,
             uint32_t flag, block_sector_t sector_no)
 {
   /* Find pte */
   uint32_t *pte = sup_pt_pte_lookup (pd, upage, true);
-  if (pte == NULL)
-    return false;
 
   /* Allocate page_struct, ie, a new entry in sup_pt */
   struct page_struct *ps =
@@ -109,7 +108,7 @@ sup_pt_add (uint32_t *pd, void *upage, uint32_t *vaddr, size_t length,
 
   // perhaps lock needed here *** ???
   struct pte_shared *pshr =
-    (struct pte_shared*)malloc (sizeof (struct pte_shared));
+    (struct pte_shared *)malloc (sizeof (struct pte_shared));
   if (pshr == NULL)
   {
     free (ps->fs);
@@ -134,8 +133,6 @@ sup_pt_shared_add (uint32_t *pd, void *upage, struct frame_struct *fs)
 {
   /* Find pte */
   uint32_t *pte = sup_pt_pte_lookup (pd, upage, true);
-  if (pte == NULL)
-    return false;
 
   /* Create page_struct and register in sup_pt */
   struct page_struct *ps;
@@ -339,7 +336,7 @@ sup_pt_fs_scan_and_reset_access (struct frame_struct *fs)
 
 /* Evict a frame
    return the freed virtual address, which can be used by others */
-uint32_t *
+uint8_t *
 sup_pt_evict_frame ()
 {
   struct list *list = &frame_list;
@@ -352,7 +349,12 @@ sup_pt_evict_frame ()
       evict_pointer = list_entry (e, struct frame_struct, elem);
     }
 
+<<<<<<< .mine
   e = &evict_pointer->elem;
+
+=======
+  e = &evict_pointer->elem;
+>>>>>>> .r83
   while (true)
     {
       /* Circularly update evict_pointer around frame table */
@@ -392,7 +394,7 @@ sup_pt_evict_frame ()
              and memset an all-zero page starting at vaddr */
     } 
 
-  uint32_t *vaddr = evict_pointer->vaddr;
+  uint8_t *vaddr = evict_pointer->vaddr;
 
   swap_out (evict_pointer);
 
@@ -402,7 +404,7 @@ sup_pt_evict_frame ()
 /* Used when swapping in or out, determined by is_swapping_in,
    set relevant bits for all pte's sharing this particular frame_struct */
 void 
-sup_pt_fs_set_pte_list (struct frame_struct *fs, uint32_t *kpage,
+sup_pt_fs_set_pte_list (struct frame_struct *fs, uint8_t *kpage,
                         bool is_swapping_in)
 {
   struct list *list = &fs->pte_list;
@@ -412,11 +414,20 @@ sup_pt_fs_set_pte_list (struct frame_struct *fs, uint32_t *kpage,
     struct pte_shared *pte_shared = list_entry (e, struct pte_shared, elem);
     if (is_swapping_in)
     {
-      bool writable = *pte_shared->pte & PTE_W;
+//      bool writable = *pte_shared->pte & PTE_W;
+      bool writable = !(fs->flag & FS_READONLY);
       bool dirty    = *pte_shared->pte & PTE_D;
-
+      printf ("before = %lx \n", *pte_shared->pte);//
       *pte_shared->pte = pte_create_user (kpage, writable);
       *pte_shared->pte |= PTE_A | (dirty ? PTE_D : 0);
+      printf ("after = %lx \n", *pte_shared->pte);//	
+      //pagedir_activate (thread_current()->pagedir);//
+
+//      uint8_t *alias = pg_round_down (ptov (*pte_shared->pte));
+//      uint32_t *pte = sup_pt_pte_lookup (init_page_dir, alias, false);
+//      if (pte == NULL)
+//         printf ("**************************ERROR\n");
+//      *pte = *pte_shared->pte;
     }
     else 
     {
@@ -450,8 +461,8 @@ sup_pt_less_func (const struct hash_elem *a, const struct hash_elem *b,
 
 /* install_page without actually reading data from disk */
 bool
-mark_page (void *upage, uint32_t *addr,
-           int length, uint32_t flag,
+mark_page (void *upage, uint8_t *addr,
+           size_t length, uint32_t flag,
            block_sector_t sector_no)
 {
   struct thread *t = thread_current ();

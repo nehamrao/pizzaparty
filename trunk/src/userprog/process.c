@@ -471,7 +471,6 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   ASSERT (ofs % PGSIZE == 0);
 
   file_seek (file, ofs);
-  block_sector_t sector_idx = byte_to_sector (file_get_inode (file), ofs);
   while (read_bytes > 0 || zero_bytes > 0) 
     {
       /* Calculate how to fill this page.
@@ -484,10 +483,12 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       /* Get a page of memory. */
 //      uint8_t *kpage = palloc_get_page (PAL_USER);
 //      if (kpage == NULL)
-//       return false;
+//        return false;
 
       /* Load this page. */
-//      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
+//      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes) 
+//        return false;
+//      else 
 //        {
 //          palloc_free_page (kpage);
 //          return false; 
@@ -500,8 +501,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 //         palloc_free_page (kpage);
 //          return false; 
 //        }
-      //uint32_t flag = (page_read_bytes > 0) ? POS_DISK : POS_ZERO;
-      uint32_t flag = 0;
+      uint32_t flag;
       if (page_read_bytes > 0)
         {
           flag = POS_DISK;
@@ -511,15 +511,11 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
           flag = POS_ZERO;
         }
       flag |= TYPE_Executable;
-      if (writable)
-        {
-          flag |= 0;
-        }
-      else
+      if (!writable)
         {
           flag |= FS_READONLY;
         }
-      //flag |= (writable ? 0 : FS_READONLY);
+      block_sector_t sector_idx =  byte_to_sector (file_get_inode (file), ofs);
       if (!mark_page (upage, NULL, page_read_bytes, flag, sector_idx))
         return false;
 /****************************************************************************/
@@ -527,7 +523,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       /* Advance. */
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;
-      sector_idx += PGSIZE / BLOCK_SECTOR_SIZE;
+      ofs += page_read_bytes;
       upage += PGSIZE;
     }
   return true;
