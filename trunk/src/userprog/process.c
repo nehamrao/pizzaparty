@@ -538,7 +538,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 bool   /****************************************************************************/
 setup_stack (void **esp) 
 {
-  uint32_t *kpage;
+  uint8_t *kpage;
   bool success = false;
 
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);

@@ -42,7 +42,7 @@ bool swap_in (struct frame_struct *pframe)
   }
 
   /* Get a frame, from memory or by evict another frame */
-  uint32_t *kpage = palloc_get_page (PAL_USER);
+  uint8_t *kpage = palloc_get_page (PAL_USER);
   if (kpage == NULL)
   {
     /* Evict to get a frame */
@@ -63,6 +63,7 @@ bool swap_in (struct frame_struct *pframe)
   if ((pframe->flag & POSBITS) == POS_ZERO)
   {
     memset (kpage, 0, PGSIZE);
+    sup_pt_set_swap_in (pframe, kpage);
     return true;
   } 
 
@@ -87,7 +88,7 @@ bool swap_in (struct frame_struct *pframe)
   int i;
   for (i = 0; i < PGSIZE / BLOCK_SECTOR_SIZE; i++)
   {
-    block_read (device, sector_no + i, ((uint8_t*)kpage) + BLOCK_SECTOR_SIZE * i); 
+    block_read (device, sector_no + i, kpage + BLOCK_SECTOR_SIZE * i); 
   }
 
   /* Set remaining of the page to 0, only necessary for disk */
@@ -109,7 +110,7 @@ bool swap_out (struct frame_struct *pframe)
 {  
   struct block *device;
   block_sector_t sector_no;
-  uint32_t *kpage = pframe->vaddr;
+  uint8_t *kpage = pframe->vaddr;
   if (kpage == NULL)
   {
     /* Virtual address invalid */
@@ -161,7 +162,7 @@ write:
   int i = 0;
   for (i = 0; i < PGSIZE / BLOCK_SECTOR_SIZE; i++)
   {
-    block_write (device, sector_no + i, ((uint8_t*)kpage) + BLOCK_SECTOR_SIZE * i); 
+    block_write (device, sector_no + i, kpage + BLOCK_SECTOR_SIZE * i); 
   }
   return true;
 

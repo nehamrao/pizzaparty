@@ -300,6 +300,10 @@ sup_pt_fs_set_dirty (struct frame_struct *fs, bool dirty)
     else 
       *pte_shared->pte &= ~PTE_D;
   }
+
+  /* Flush TLB */
+  struct thread* t = thread_current ();
+  pagedir_activate (t->pagedir);
 }
 
 
@@ -414,8 +418,14 @@ sup_pt_fs_set_pte_list (struct frame_struct *fs, uint32_t *kpage,
       *pte_shared->pte |= PTE_A | (dirty ? PTE_D : 0);
     }
     else 
+    {
       *pte_shared->pte &= ~PTE_P;
+    }
   }
+
+  /* Flush TLB */
+  struct thread* t = thread_current ();
+  pagedir_activate (t->pagedir);
   return;
 }
 

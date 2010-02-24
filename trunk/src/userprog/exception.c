@@ -195,7 +195,7 @@ page_fault (struct intr_frame *f)
   uint32_t *pte = pt + pt_no (fault_addr);
   struct page_struct *ps = sup_pt_ps_lookup (pte);
 
-  /* User process should not access address 0 */
+  /* Address not present */
   if (ps == NULL) goto bad_page_fault;
 
   /* Write to read-only page */
