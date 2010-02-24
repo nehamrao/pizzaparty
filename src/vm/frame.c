@@ -352,6 +352,7 @@ sup_pt_evict_frame ()
       evict_pointer = list_entry (e, struct frame_struct, elem);
     }
 
+  e = &evict_pointer->elem;
   while (true)
     {
       /* Circularly update evict_pointer around frame table */
