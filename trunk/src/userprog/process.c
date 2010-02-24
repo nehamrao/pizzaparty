@@ -515,7 +515,8 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
         {
           flag |= FS_READONLY;
         }
-      block_sector_t sector_idx =  byte_to_sector (file_get_inode (file), ofs);
+      block_sector_t sector_idx =
+        byte_to_sector (file_get_inode (file), ofs);
       if (!mark_page (upage, NULL, page_read_bytes, flag, sector_idx))
         return false;
 /****************************************************************************/
