@@ -159,18 +159,23 @@ page_fault (struct intr_frame *f)
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
-/*  printf ("Page fault at %p: %s error %s page in %s context.\n",
+  /*
+  printf ("Page fault at %p: %s error %s page in %s context.\n",
           fault_addr,
           not_present ? "not present" : "rights violation",
           write ? "writing" : "reading",
           user ? "user" : "kernel");
   kill (f);
-*/
+  */
+
+#if 1
 
   if (user)
   {
     struct thread *t = thread_current ();
     uint32_t *pd, *pde, *pt, *pte;
+
+    /* Get page table entry */
     pd = t->pagedir;
     pde = pd + pd_no (fault_addr);
     if (*pde == 0)
@@ -180,6 +185,8 @@ page_fault (struct intr_frame *f)
     }
     pt = pde_get_pt (*pde);
     pte = pt + pt_no (fault_addr);
+
+    /* Get supplementale page table entry */
     struct page_struct *ps = sup_pt_ps_lookup (pte);
 
     /* Stack growth */
@@ -200,34 +207,51 @@ page_fault (struct intr_frame *f)
           }
       }
 
-// the user process should not expect any data at the address it was trying to access , or if the page lies within kernel virtual memory
+    /* User process should not access data at address 0 */
     if (ps == NULL) 
     {
       kill (f);
       return;
     }
-// the access is an attempt to write to a read-only page
+
+    /* An attempt to write to a read-only page */
     if (write && (ps->fs->flag & FS_READONLY))
     {
       kill (f);   
       return;
     }
-// If you implement sharing, the page's data might even already be in a page frame, but not in the page table.
+
+    /* yinfeng ********************************************/
+    /* TODO very suspicious here
+       if already in POS_MEM, why page fault */
+    /* Sharing */
+    /* The page's data might even already be in a page frame
+       but not in the page table, link pte to that frame */
     if ((ps->fs->flag & POSBITS) == POS_MEM) 
     {
       *pte = pte_create_user (ps->fs->vaddr, !(ps->fs->flag & FS_READONLY));
       return;
     }
-    if (!swap_in (ps->fs) || !pagedir_set_page (pd, fault_addr, ps->fs->vaddr, !(ps->fs->flag & FS_READONLY)))
+
+    /* swap in and setup page */
+    bool success_swap_in = swap_in (ps->fs);
+    bool success_set_page =
+      pagedir_set_page (pd, fault_addr, ps->fs->vaddr,
+                        !(ps->fs->flag & FS_READONLY));
+    if (!success_swap_in || !success_set_page)
     {
+      /* yinfeng ********************************************/
+      /* TODO we need proper clean up if swap in or setup page fails */
       kill (f);
+      return;
     }
   }
-  else 
+  else          /* Access in kernel address space */
   {
     kill (f);
+    return;
   }
-  return;
+#endif
 /****************************************************************************/
 }
 
