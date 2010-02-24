@@ -471,7 +471,7 @@ load_segment (struct file *file, off_t ofs, uint32_t *upage,
   ASSERT (ofs % PGSIZE == 0);
 
   file_seek (file, ofs);
-  block_sector_t sector_idx = inode_get_inumber (file_get_inode (file)) + ofs / BLOCK_SECTOR_SIZE;
+  block_sector_t sector_idx = byte_to_sector (file_get_inode (file), ofs);
   while (read_bytes > 0 || zero_bytes > 0) 
     {
       /* Calculate how to fill this page.

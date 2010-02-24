@@ -502,15 +502,15 @@ _mmap (int fd, void *addr)
   uint32_t read_bytes = f_size;
   uint32_t zero_bytes = ROUND_UP (read_bytes, PGSIZE) - read_bytes;
   void* upage = addr;
-  block_sector_t sector_idx = inode_get_inumber (file_get_inode (ms->p_file));
+  block_sector_t sector_idx = byte_to_sector (file_get_inode (ms->p_file), 0);
   while (read_bytes > 0 || zero_bytes > 0)
     {
       /* Calculate how to fill this page */
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
+      /* Add sup_pt entry */
       uint32_t flag = (page_read_bytes > 0 ? POS_DISK : POS_ZERO) | TYPE_MMFile;
-      /* Deal with sector number !!!!!!!!!! */
       mark_page (upage, NULL, page_read_bytes, flag, sector_idx);
 
       /* Advance */
