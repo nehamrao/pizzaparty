@@ -43,6 +43,7 @@ bool swap_in (struct frame_struct *pframe)
 
   /* Get a frame, from memory or by evict another frame */
   uint8_t *kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+
   if (kpage == NULL)
   {
     /* Evict to get a frame */

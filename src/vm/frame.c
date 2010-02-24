@@ -348,8 +348,8 @@ sup_pt_evict_frame ()
       e = list_begin (list); 
       evict_pointer = list_entry (e, struct frame_struct, elem);
     }
-
   e = &evict_pointer->elem;
+
   while (true)
     {
       /* Circularly update evict_pointer around frame table */
@@ -411,11 +411,8 @@ sup_pt_fs_set_pte_list (struct frame_struct *fs, uint8_t *kpage,
     {
       bool writable = !(fs->flag & FS_READONLY);
       bool dirty    = *pte_shared->pte & PTE_D;
-      //printf ("before = %lx \n", *pte_shared->pte);//
       *pte_shared->pte = pte_create_user (kpage, writable);
       *pte_shared->pte |= PTE_A | (dirty ? PTE_D : 0);
-      //printf ("after = %lx \n", *pte_shared->pte);//	
-      //pagedir_activate (thread_current()->pagedir);//
 
 //      uint8_t *alias = pg_round_down (ptov (*pte_shared->pte));
 //      uint32_t *pte = sup_pt_pte_lookup (init_page_dir, alias, false);
