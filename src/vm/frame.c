@@ -349,12 +349,7 @@ sup_pt_evict_frame ()
       evict_pointer = list_entry (e, struct frame_struct, elem);
     }
 
-<<<<<<< .mine
   e = &evict_pointer->elem;
-
-=======
-  e = &evict_pointer->elem;
->>>>>>> .r83
   while (true)
     {
       /* Circularly update evict_pointer around frame table */
@@ -414,7 +409,6 @@ sup_pt_fs_set_pte_list (struct frame_struct *fs, uint8_t *kpage,
     struct pte_shared *pte_shared = list_entry (e, struct pte_shared, elem);
     if (is_swapping_in)
     {
-//      bool writable = *pte_shared->pte & PTE_W;
       bool writable = !(fs->flag & FS_READONLY);
       bool dirty    = *pte_shared->pte & PTE_D;
       printf ("before = %lx \n", *pte_shared->pte);//
