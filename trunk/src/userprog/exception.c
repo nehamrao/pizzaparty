@@ -155,102 +155,74 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-/****************************************************************************/
-  /* To implement virtual memory, delete the rest of the function
-     body, and replace it with code that brings in the page to
-     which fault_addr refers. */
-  /*
-  printf ("Page fault at %p: %s error %s page in %s context.\n",
-          fault_addr,
-          not_present ? "not present" : "rights violation",
-          write ? "writing" : "reading",
-          user ? "user" : "kernel");
-  kill (f);
-  */
 
-#if 1
+  /* Access in kernel address space is not valid */
+  if (!user) goto bad_page_fault;
 
-  if (user)
-  {
-    struct thread *t = thread_current ();
-    uint32_t *pd, *pde, *pt, *pte;
+  struct thread *t = thread_current ();
 
-    /* Get page table entry */
-    pd = t->pagedir;
-    pde = pd + pd_no (fault_addr);
-    if (*pde == 0)
+  /* Get page directory entry */
+  uint32_t *pd = t->pagedir;
+  uint32_t *pde = pd + pd_no (fault_addr);
+  if (*pde == 0)
     {
-      kill (f);
-      return;
-    }
-    pt = pde_get_pt (*pde);
-    pte = pt + pt_no (fault_addr);
-
-    /* Stack growth */
-    if (write &&
-        fault_addr < t->stack_bound &&
-        fault_addr > t->stack_bound - PGSIZE)
-      {
-        uint32_t flag = POS_ZERO | TYPE_Stack;
-        t->stack_bound -= PGSIZE;
-        bool success_pt_add = sup_pt_add (t->pagedir,
-          t->stack_bound - PGSIZE, NULL, 0, flag, SECTOR_ERROR);
-        if (!success)
-          {
-            /* TODO How to reverse the failed add to sup_pt */
-            kill (f);
-          }
-        return;
-      }
+      goto bad_page_fault;
+      /* TODO disable stack growth for now */
+#if 0
+      /* Stack growth */
+      if (write && fault_addr < t->stack_bound &&
+          fault_addr > t->stack_bound - PGSIZE)
+        {
+          /* Add a sup_pt entry for this newly added stack page */
+          uint32_t flag = POS_ZERO | TYPE_Stack;
+          bool success_pt_add = sup_pt_add (t->pagedir,
+            t->stack_bound - PGSIZE, NULL, 0, flag, SECTOR_ERROR);
     
-    /* Get supplementale page table entry */
-    struct page_struct *ps = sup_pt_ps_lookup (pte);
-
-    /* User process should not access data at address 0 */
-    if (ps == NULL) 
-    {
-      kill (f);
-      return;
+          if (!success_pt_add)
+            goto bad_page_fault;
+    
+          /* Now the stack is expanded by one page */
+          t->stack_bound -= PGSIZE;
+        }
+      /* Other bad address */
+      else
+        goto bad_page_fault;
+#endif
     }
 
-    /* An attempt to write to a read-only page */
-    if (write && (ps->fs->flag & FS_READONLY))
-    {
-      kill (f);   
-      return;
-    }
+  /* Get supplementale page table entry */
+  uint32_t *pt = pde_get_pt (*pde);
+  uint32_t *pte = pt + pt_no (fault_addr);
+  struct page_struct *ps = sup_pt_ps_lookup (pte);
 
-    /* yinfeng ********************************************/
-    /* TODO very suspicious here
-       if already in POS_MEM, why page fault */
-    /* Sharing */
-    /* The page's data might even already be in a page frame
-       but not in the page table, link pte to that frame */
-    if ((ps->fs->flag & POSBITS) == POS_MEM) 
+  /* User process should not access address 0 */
+  if (ps == NULL) goto bad_page_fault;
+
+  /* Write to read-only page */
+  if (write && (ps->fs->flag & FS_READONLY)) goto bad_page_fault;
+
+  /* yinfeng ********************************************/
+  /* Sharing */
+  /* The page's data might even already be in a page frame
+     but not in the page table, link pte to that frame */
+  /* TODO disable sharing for now, if already in POS_MEM, why page fault */
+#if 0
+  if ((ps->fs->flag & POSBITS) == POS_MEM) 
     {
       *pte = pte_create_user (ps->fs->vaddr, !(ps->fs->flag & FS_READONLY));
-      return;
+      goto normal_page_fault;
     }
-
-    /* swap in and setup page */
-    bool success_swap_in = swap_in (ps->fs);
-    bool success_set_page =
-      pagedir_set_page (pd, pg_round_down (fault_addr), ps->fs->vaddr,
-                        !(ps->fs->flag & FS_READONLY));
-    if (!success_swap_in || !success_set_page)
-    {
-      /* yinfeng ********************************************/
-      /* TODO we need proper clean up if swap in or setup page fails */
-      kill (f);
-      return;
-    }
-  }
-  else          /* Access in kernel address space */
-  {
-    kill (f);
-    return;
-  }
 #endif
-/****************************************************************************/
+
+  /* All other normal page_fault situation */
+  goto normal_page_fault;
+
+normal_page_fault:              /* Swap in the page */
+  if (!swap_in (ps->fs))
+    kill (f);
+
+bad_page_fault:                 /* Terminate the process */
+  kill (f);
+  return;
 }
 
