@@ -622,7 +622,7 @@ add_file (struct thread* t, struct file_info* f_info)
 static bool
 checkvaddr(const void * vaddr, unsigned size)
 {
-  uint32_t *pcheck;
+  uint8_t *pcheck;
 
   struct thread *t = thread_current ();
 

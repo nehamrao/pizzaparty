@@ -15,7 +15,7 @@
 static long long page_fault_cnt;
 
 static void kill (struct intr_frame *);
-static void page_fault (struct intr_frame *);
+
 
 /* Registers handlers for interrupts that can be caused by user
    programs.
@@ -126,7 +126,7 @@ kill (struct intr_frame *f)
    can find more information about both of these in the
    description of "Interrupt 14--Page Fault Exception (#PF)" in
    [IA32-v3a] section 5.15 "Exception and Interrupt Reference". */
-static void
+void
 page_fault (struct intr_frame *f) 
 {
   bool not_present;  /* True: not-present page, false: writing r/o page. */
@@ -155,6 +155,9 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
+  printf ("Fault Addr = %lx\n", fault_addr);
+  printf ("error code = %lx\n", f->error_code);
+  printf ("notp = %ld, write = %ld, user = %ld\n", not_present, write, user);
 
   /* Access in kernel address space is not valid */
   if (!user) goto bad_page_fault;
@@ -193,6 +196,8 @@ page_fault (struct intr_frame *f)
   /* Get supplementale page table entry */
   uint32_t *pt = pde_get_pt (*pde);
   uint32_t *pte = pt + pt_no (fault_addr);
+  printf ("*pte = %lx\n", *pte);
+  printf ("*pde = %lx\n", *pde);
   struct page_struct *ps = sup_pt_ps_lookup (pte);
 
   /* Address not present */
@@ -220,6 +225,7 @@ page_fault (struct intr_frame *f)
 normal_page_fault:              /* Swap in the page */
   if (!swap_in (ps->fs))
     kill (f);
+  return;
 
 bad_page_fault:                 /* Terminate the process */
   kill (f);

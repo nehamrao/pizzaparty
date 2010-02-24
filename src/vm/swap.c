@@ -42,7 +42,11 @@ bool swap_in (struct frame_struct *pframe)
   }
 
   /* Get a frame, from memory or by evict another frame */
+<<<<<<< .mine
+  uint8_t *kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+=======
   uint8_t *kpage = palloc_get_page (PAL_USER);
+>>>>>>> .r83
   if (kpage == NULL)
   {
     /* Evict to get a frame */
@@ -62,10 +66,23 @@ bool swap_in (struct frame_struct *pframe)
   /* If zero page, just write a page of 0's */
   if ((pframe->flag & POSBITS) == POS_ZERO)
   {
+<<<<<<< .mine
+    //memset (kpage, 0, PGSIZE);
+//    device = fs_device;
+    pframe->flag = (pframe->flag & POSMASK) | POS_DISK;
+//    sup_pt_set_swap_in (pframe, kpage); 
+//    return true;
+=======
     memset (kpage, 0, PGSIZE);
     sup_pt_set_swap_in (pframe, kpage);
     return true;
+>>>>>>> .r83
   } 
+//  if ((pframe->flag & POSBITS) == POS_MEM)
+//    {
+//      pframe->flag = (pframe->flag & POSMASK) | POS_DISK;
+//    } 
+
 
   /* On disk */
   if ((pframe->flag & POSBITS) == POS_DISK)
@@ -84,11 +101,18 @@ bool swap_in (struct frame_struct *pframe)
     return false;
   }
   
+
   /* Read from disk or swap */
-  int i;
+  block_sector_t i;
+
   for (i = 0; i < PGSIZE / BLOCK_SECTOR_SIZE; i++)
   {
+<<<<<<< .mine
     block_read (device, sector_no + i, kpage + BLOCK_SECTOR_SIZE * i); 
+
+=======
+    block_read (device, sector_no + i, kpage + BLOCK_SECTOR_SIZE * i); 
+>>>>>>> .r83
   }
 
   /* Set remaining of the page to 0, only necessary for disk */
