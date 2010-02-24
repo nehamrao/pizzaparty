@@ -353,11 +353,8 @@ sup_pt_evict_frame ()
   while (true)
     {
       /* Circularly update evict_pointer around frame table */
-      if (e != list_end (list))
-        {
-          e = list_next (&evict_pointer->elem);
-        }
-      else
+      e = list_next (&evict_pointer->elem);
+      if (e == list_end (list))
         {
           e = list_begin (list); 
         }
@@ -367,14 +364,16 @@ sup_pt_evict_frame ()
          Later make sure we set this FS_PINED somewhere else
          maybe for use by synchronizaiton */
       if ((evict_pointer->flag & FS_PINED) != 0)
+      {
+        printf ("PINNED\n");
         continue;
+      }
 
       /* Frames in memory are candidates for eviction */
       if ((evict_pointer->flag & POSBITS) == POS_MEM)
         if (sup_pt_fs_scan_and_reset_access (evict_pointer))
           break;
 
-      /* How about POS_ZERO? */
       /* yinfeng **********************************************
          first,
          set relevant bits properly in frame_struct here

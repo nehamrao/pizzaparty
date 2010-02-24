@@ -371,7 +371,7 @@ load (const char *cmd_line, void (**eip) (void), void **esp)
                   zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
                 }
               if (!load_segment (file, file_page, (void *) mem_page,
-                                 read_bytes, zero_bytes, writable)) // *** some flag parameters needed.
+                                 read_bytes, zero_bytes, writable))
                 goto done;
             }
           else
@@ -501,20 +501,13 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 //         palloc_free_page (kpage);
 //          return false; 
 //        }
-      uint32_t flag;
-      if (page_read_bytes > 0)
-        {
-          flag = POS_DISK;
-        }
-      else
-        {
-          flag = POS_ZERO;
-        }
-      flag |= TYPE_Executable;
+      uint32_t flag = POS_DISK | TYPE_Executable;
+      if (page_read_bytes == 0)
+          flag |= FS_ZERO;
+
       if (!writable)
-        {
           flag |= FS_READONLY;
-        }
+
       block_sector_t sector_idx =
         byte_to_sector (file_get_inode (file), ofs);
       if (!mark_page (upage, NULL, page_read_bytes, flag, sector_idx))
