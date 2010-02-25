@@ -1,8 +1,6 @@
-#include "userprog/exception.h"
-#include "vm/frame.h"
-#include "vm/swap.h"
 #include <inttypes.h>
 #include <stdio.h>
+#include "userprog/exception.h"
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "threads/interrupt.h"
@@ -10,6 +8,8 @@
 #include "threads/vaddr.h"
 #include "threads/pte.h"
 #include "threads/malloc.h"
+#include "vm/frame.h"
+#include "vm/swap.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -153,43 +153,52 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-  /* Access in kernel address space is not valid */
+  /* Here the handler part begins */
+
+  /* The address should not be present */
   if (!not_present) 
     goto bad_page_fault;
 
+  /* Get user_esp for possible stack growth */
   struct thread *t = thread_current ();
-  struct page_struct *ps;
-//  printf ("fault_addr = %lx\n", fault_addr);
-
+  struct page_struct *ps = NULL;
   void *user_esp;
   if (user)
     user_esp = f->esp;
   else 
     user_esp = t->user_esp;
-  /* Stack growth */
-  if (not_present && write && (fault_addr < t->stack_bound) &&
-    (fault_addr >= user_esp - 32))
-  {
-    /* If the user stack growth exceeds certain limit, terminate the process */
-    if (pg_round_down (fault_addr) + USER_STACK_LIMIT < PHYS_BASE)
+
+  /* Stack growth heuristic condition:
+        write to a non-present address and
+        fault_addr below previous stack_bound and
+        fault_addr above the lowest possible esp position */
+  if (not_present && write &&
+      fault_addr < t->stack_bound &&
+      fault_addr >= user_esp - 32)
     {
-      goto bad_page_fault;
+      /* If user stack growth exceeds certain limit, terminate the process */
+      if (pg_round_down (fault_addr) + USER_STACK_LIMIT < PHYS_BASE)
+        {
+          goto bad_page_fault;
+        }
+  
+      /* Add sup_pt entries necessary for this newly added stack page
+         fill in the gap from stack_bound all the way down
+         to the page containing fault_addr */
+      uint32_t flag = POS_SWAP | TYPE_Stack | FS_ZERO;
+      void *upage = t->stack_bound - PGSIZE;
+      while (upage >= pg_round_down (fault_addr))
+        {
+          ps = sup_pt_add (t->pagedir, upage, NULL, PGSIZE, flag, 0);
+          if (ps == NULL)
+            goto bad_page_fault;
+          upage -= PGSIZE;
+        }
+      
+      /* Now grow the stack */
+      t->stack_bound = pg_round_down (fault_addr);
+      goto normal_page_fault;
     }
-    /* Add a sup_pt entry for this newly added stack page */
-    uint32_t flag = POS_SWAP | TYPE_Stack | FS_ZERO;
-    void *upage = t->stack_bound - PGSIZE;
-    while (upage >= pg_round_down (fault_addr))
-    {
-      ps = sup_pt_add (t->pagedir, upage, NULL, PGSIZE, flag, 0);
-      if (ps == NULL)
-        goto bad_page_fault;
-      upage -= PGSIZE;
-    }
-    
-    /* Now the stack is expanded*/
-    t->stack_bound = pg_round_down (fault_addr);
-    goto normal_page_fault;
-  }
 
   /* Get page directory entry */
   uint32_t *pd = t->pagedir;
@@ -204,10 +213,10 @@ page_fault (struct intr_frame *f)
   uint32_t *pte = pt + pt_no (fault_addr);
   ps = sup_pt_ps_lookup (pte);
 
-  /* Address not present */
+  /* No entry in supplemental page table indicates a bad address */
   if (ps == NULL) goto bad_page_fault;
 
-  /* All other normal page_fault situation */
+  /* All other normal page_faults can come here */
   goto normal_page_fault;
 
 normal_page_fault:              /* Swap in the page */

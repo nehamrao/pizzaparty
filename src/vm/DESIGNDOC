@@ -39,6 +39,8 @@ Yinfeng Qin     <yinfeng@stanford.edu>
 >> kernel and user virtual addresses that alias a single frame, or
 >> alternatively how do you avoid the issue?
 
+also mention Flush TLB here
+
 ---- SYNCHRONIZATION ----
 
 >> A4: When two user processes both need a new frame at the same time,

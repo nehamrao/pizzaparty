@@ -90,11 +90,18 @@ bool swap_in (struct frame_struct *pframe)
   /* On disk */
   if (pos == POS_DISK)
   {
+    /* Register filesys as block device */
     device = fs_device;
+
+    /* Whether a newly loaded exec file page
+       or a swapped out mem-mapped file page
+       they are not dirty */
+    pframe->flag &= ~FS_DIRTY;
   }
   /* On swap */
   else if (pos == POS_SWAP)
   {
+    /* Register swap as block device */
     device = sp_device;
   }
   else
@@ -103,7 +110,6 @@ bool swap_in (struct frame_struct *pframe)
     palloc_free_page (kpage);
     return false;
   }
-  
 
   /* Read from disk or swap */
   block_sector_t i;
@@ -125,7 +131,7 @@ bool swap_in (struct frame_struct *pframe)
     lock_release (&swap_set_lock);
    }
   /* Update sup_pt entry information */
-  sup_pt_set_swap_in (pframe, kpage);              
+  sup_pt_set_swap_in (pframe, kpage);
 
   return true;
 }
@@ -133,8 +139,8 @@ bool swap_in (struct frame_struct *pframe)
 /* TODO need better comment swap out */
 bool swap_out (struct frame_struct *pframe)
 {  
-  struct block *device;
-  block_sector_t sector_no;
+  struct block *device = NULL;
+  block_sector_t sector_no = 0;
   uint8_t *kpage = pframe->vaddr;
   if (kpage == NULL)
   {
@@ -146,7 +152,7 @@ bool swap_out (struct frame_struct *pframe)
   uint32_t dirty = sup_pt_fs_is_dirty (pframe);
   uint32_t is_all_zero = pframe->flag & FS_ZERO;
 
-  ASSERT (pframe->flag & POSBITS == POS_MEM);
+  ASSERT ((pframe->flag & POSBITS) == POS_MEM);
 
   /* Zero and not dirty page need not swap out */
   if (is_all_zero && !dirty)
