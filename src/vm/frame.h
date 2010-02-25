@@ -53,9 +53,9 @@ struct pte_shared
 
 void sup_pt_init (void);
 
-bool sup_pt_add (uint32_t *pd, void *upage, uint8_t *vaddr, size_t length,
+struct page_struct * sup_pt_add (uint32_t *pd, void *upage, uint8_t *vaddr, size_t length,
                  uint32_t flag, block_sector_t sector_no);
-bool sup_pt_shared_add (uint32_t *pd, void *upage, struct frame_struct *fs);
+struct page_struct * sup_pt_shared_add (uint32_t *pd, void *upage, struct frame_struct *fs);
 
 bool sup_pt_find_and_delete (uint32_t *pd, void *upage);
 bool sup_pt_delete (uint32_t *pte);
