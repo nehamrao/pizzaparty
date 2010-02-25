@@ -18,6 +18,9 @@ struct lock sup_pt_lock;
 struct list frame_list;
 struct lock frame_list_lock;
 
+/* Lock for frame eviction */
+struct lock evict_lock;
+
 /* "Hand" in clock algorithm for frame eviction */
 struct frame_struct* evict_pointer;
 
@@ -37,6 +40,7 @@ sup_pt_init (void)
   list_init (&frame_list);
   lock_init (&sup_pt_lock);
   lock_init (&frame_list_lock);
+  lock_init (&evict_lock);
   evict_pointer = NULL;
 }
 
@@ -102,11 +106,13 @@ sup_pt_add (uint32_t *pd, void *upage, uint8_t *vaddr, size_t length,
   /* Fill in sup_pt entry info */
   ps->key = (uint32_t) pte;
   ps->fs = malloc (sizeof (struct frame_struct));
+  
   if (ps->fs == NULL)
   {
     free (ps);
     return NULL;
   }
+  lock_init (&ps->fs->frame_lock);
   ps->fs->vaddr = vaddr;
   ps->fs->length = length;
   ps->fs->flag = flag;
@@ -237,6 +243,7 @@ sup_pt_set_swap_in (struct frame_struct *fs, void *kpage)
 {
   fs->vaddr = kpage;
   fs->flag = (fs->flag & POSMASK) | POS_MEM;
+  fs->flag &= ~FS_PINNED;
 
   sup_pt_fs_set_pte_list (fs, kpage, true);
 }
@@ -365,6 +372,7 @@ sup_pt_evict_frame ()
   struct list_elem *e;
 
   /* Get evict_pointer, initialize if necessary */
+  lock_acquire (&evict_lock);
   if (evict_pointer == NULL)
     {
       lock_acquire (&frame_list_lock);
@@ -388,21 +396,26 @@ sup_pt_evict_frame ()
 
       /* Query PINED bit */
       /* TODO ??? */
-      if ((evict_pointer->flag & FS_PINED) != 0)
+      if ((evict_pointer->flag & FS_PINNED) != 0)
       {
-        printf ("PINNED\n");
+//        printf ("PINNED\n");
         continue;
+//      } else {
+//        evict_pointer->flag |= FS_PINNED; 
       }
 
       /* Frames in memory are candidates for eviction */
       if ((evict_pointer->flag & POSBITS) == POS_MEM)
         if (sup_pt_fs_scan_and_reset_access (evict_pointer))
           break;
+//      evict_pointer->flag &= ~FS_PINNED;
     } 
 
-  uint8_t *vaddr = evict_pointer->vaddr;
-  swap_out (evict_pointer);
+  struct frame_struct *victim = evict_pointer;
+  lock_release (&evict_lock);  
 
+  uint8_t *vaddr = victim->vaddr;
+  swap_out (victim);
   return vaddr;
 }
 
