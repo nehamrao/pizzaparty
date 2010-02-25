@@ -12,9 +12,11 @@
 
 /* Supplemental Page Table is global. */
 struct hash sup_pt;
+struct lock sup_pt_lock;
 
 /* Frame Table */
 struct list frame_list;
+struct lock frame_list_lock;
 
 /* "Hand" in clock algorithm for frame eviction */
 struct frame_struct* evict_pointer;
@@ -33,6 +35,8 @@ sup_pt_init (void)
 {
   hash_init (&sup_pt, sup_pt_hash_func, sup_pt_less_func, NULL);
   list_init (&frame_list);
+  lock_init (&sup_pt_lock);
+  lock_init (&frame_list_lock);
   evict_pointer = NULL;
 }
 
@@ -74,7 +78,9 @@ sup_pt_ps_lookup (uint32_t *pte)
   struct page_struct ps;
   ps.key = (uint32_t)pte;
 
+  lock_acquire (&sup_pt_lock);
   struct hash_elem *e = hash_find (&sup_pt, &ps.elem);
+  lock_release (&sup_pt_lock);
 
   return (e != NULL) ? hash_entry (e, struct page_struct, elem) : NULL;
 }
@@ -120,10 +126,14 @@ sup_pt_add (uint32_t *pd, void *upage, uint8_t *vaddr, size_t length,
   list_push_back (&ps->fs->pte_list, &pshr->elem);
 
   /* Register at supplemental page table */
+  lock_acquire (&sup_pt_lock);
   hash_insert (&sup_pt, &ps->elem);
+  lock_release (&sup_pt_lock);
 
   /* Register at frame table */
+  lock_acquire (&frame_list_lock);
   list_push_back (&frame_list, &ps->fs->elem);
+  lock_release (&frame_list_lock);
 
   return ps;
 }
@@ -142,7 +152,10 @@ sup_pt_shared_add (uint32_t *pd, void *upage, struct frame_struct *fs)
     return NULL;
   ps->key = (uint32_t) pte;
   ps->fs = fs;
+  
+  lock_acquire (&sup_pt_lock);
   hash_insert (&sup_pt, &ps->elem);
+  lock_release (&sup_pt_lock);
 
   /* Register share memory in frame table */
   struct pte_shared* pshr =
@@ -202,10 +215,15 @@ sup_pt_delete (uint32_t *pte)
       if (list_empty (list))  /* Special case: removed the last element */
       {
         last_entry = true;
+        lock_acquire (&frame_list_lock);
         list_remove (&ps->fs->elem);
+        lock_release (&frame_list_lock);
         free (ps->fs);
       }
+      
+      lock_acquire (&sup_pt_lock);
       hash_delete (&sup_pt, &ps->elem);
+      lock_release (&sup_pt_lock);
       free (ps);
       break;
     }
@@ -349,20 +367,24 @@ sup_pt_evict_frame ()
   /* Get evict_pointer, initialize if necessary */
   if (evict_pointer == NULL)
     {
+      lock_acquire (&frame_list_lock);
       e = list_begin (list); 
       evict_pointer = list_entry (e, struct frame_struct, elem);
+      lock_release (&frame_list_lock);
     }
   e = &evict_pointer->elem;
 
   while (true)
     {
       /* Circularly update evict_pointer around frame table */
+      lock_acquire (&frame_list_lock);
       e = list_next (&evict_pointer->elem);
       if (e == list_end (list))
         {
           e = list_begin (list); 
         }
       evict_pointer = list_entry (e, struct frame_struct, elem);
+      lock_release (&frame_list_lock);
 
       /* Query PINED bit */
       /* TODO ??? */
