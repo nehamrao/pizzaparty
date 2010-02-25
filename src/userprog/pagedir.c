@@ -6,6 +6,7 @@
 #include "threads/pte.h"
 #include "threads/palloc.h"
 #include "vm/frame.h"
+#include "vm/swap.h"
 
 static uint32_t *active_pd (void);
 static void invalidate_pagedir (uint32_t *);
@@ -49,6 +50,8 @@ pagedir_destroy (uint32_t *pd)
               palloc_free_page (pte_get_page (*pte));
 /****************************************************************************/
           }
+          else
+          swap_free (pte);
         palloc_free_page (pt);
       }
   palloc_free_page (pd);

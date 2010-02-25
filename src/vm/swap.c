@@ -7,26 +7,45 @@
 #include "devices/block.h"
 #include "threads/palloc.h"
 #include "threads/vaddr.h"
+#include "threads/synch.h"
 #include "filesys/filesys.h"
 #include "filesys/inode.h"
 #include "filesys/free-map.h"
 #include "userprog/pagedir.h"
 
+
 struct block *sp_device;
 static struct bitmap *swap_free_map;
+struct lock swap_set_lock;
 
 /* Initialize swap device and swap table */
 void swap_init ()
 {
   /*swap device pointer */
   sp_device = block_get_role (BLOCK_SWAP);
-
+  lock_init (&swap_set_lock);
   /* Bitmap for swap */
   swap_free_map = bitmap_create (block_size (sp_device));
   if (swap_free_map == NULL)
   {
      PANIC ("Out of kernel memory pool\n");
   }
+}
+
+void swap_free (uint32_t * pte)
+{
+   
+   struct page_struct * ps = sup_pt_ps_lookup (pte);
+
+   
+   if (ps != NULL && (ps->fs->flag&POSBITS) == POS_SWAP )
+   {  
+      lock_acquire (&swap_set_lock);
+      bitmap_set_multiple (swap_free_map, ps->fs->sector_no, PGSIZE / BLOCK_SECTOR_SIZE, false);
+       lock_release (&swap_set_lock);
+   }
+   return;
+
 }
 
 /* TODO need better comment swap in */
@@ -47,7 +66,9 @@ bool swap_in (struct frame_struct *pframe)
   if (kpage == NULL)
   {
     /* Evict to get a frame */
+   // lock_acquire (&swap_set_lock);
     kpage = sup_pt_evict_frame ();
+   //  lock_release (&swap_set_lock);
     if (kpage == NULL)
     {
       PANIC ("Out of swap space!\n");
@@ -98,8 +119,11 @@ bool swap_in (struct frame_struct *pframe)
   
   /* Free swap table entries */
   if (device == sp_device)
+   {
+    lock_acquire (&swap_set_lock);
     bitmap_set_multiple (swap_free_map, sector_no, PGSIZE / BLOCK_SECTOR_SIZE, false);
-
+    lock_release (&swap_set_lock);
+   }
   /* Update sup_pt entry information */
   sup_pt_set_swap_in (pframe, kpage);              
 
@@ -138,9 +162,10 @@ bool swap_out (struct frame_struct *pframe)
   if (type == TYPE_Stack)
   {
     device = sp_device;
+    lock_acquire (&swap_set_lock);
     sector_no = bitmap_scan_and_flip (swap_free_map, 0,
                                       PGSIZE / BLOCK_SECTOR_SIZE, false);
-
+    lock_release (&swap_set_lock);
     sup_pt_set_swap_out (pframe, sector_no, false); 
     goto write;
   }
@@ -160,8 +185,10 @@ bool swap_out (struct frame_struct *pframe)
     if (dirty)
     {
       device = sp_device;
+      lock_acquire (&swap_set_lock);
       sector_no = bitmap_scan_and_flip (swap_free_map, 0,
                                         PGSIZE / BLOCK_SECTOR_SIZE, false);
+      lock_release (&swap_set_lock);
 
       sup_pt_set_swap_out (pframe, sector_no, false); 
       goto write;

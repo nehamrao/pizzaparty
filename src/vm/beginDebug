@@ -1,6 +1,8 @@
 pintos-mkdisk filesys.dsk --filesys-size=2
 pintos-mkdisk swap.dsk --swap-size=4
 pintos -f -q
-make build/tests/vm/pt-grow-stack.result
-pintos -p ./build/tests/vm/pt-grow-stack -a pt-grow-stack -p ../tests/vm/sample.txt -a sample.txt -- -q
-pintos -v --gdb -- run pt-grow-stack
+make build/tests/vm/page-parallel.result
+pintos -p ./build/tests/vm/page-parallel -a page-parallel -p ./build/tests/vm/child-linear -a child-linear -- -q
+pintos -v --gdb -- run page-parallel
+
+
