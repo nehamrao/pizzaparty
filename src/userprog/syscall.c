@@ -6,7 +6,9 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/malloc.h"
+#include "threads/palloc.h"
 #include "threads/vaddr.h"
+#include "threads/pte.h"
 #include "devices/shutdown.h"
 #include "devices/input.h"
 #include "filesys/file.h"
@@ -555,10 +557,19 @@ _munmap (mapid_t mapping)
               //******************************************************************** what if pte == NULL here? 
               struct page_struct* ps = sup_pt_ps_lookup (pte);
 	      //******************************************************************** what if ps == NULL here? 
+              /* Write back to disk if page is dirty */
               if (sup_pt_fs_is_dirty (ps->fs))
                 {
                   file_write_at (ms->p_file, upage, write_bytes, upage - ms->vaddr);
                   /* TODO un-dirty this page */
+                }
+
+              /* Delete pte and release page */
+              uint32_t tmp_pte_content = *pte;
+              if (sup_pt_delete (pte))
+                {
+                  if ((tmp_pte_content & PTE_P) != 0)
+                    palloc_free_page (pte_get_page (tmp_pte_content));
                 }
 
               /* Advance  */
