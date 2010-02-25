@@ -1,7 +1,6 @@
 pintos-mkdisk filesys.dsk --filesys-size=2
 pintos-mkdisk swap.dsk --swap-size=4
 pintos -f -q
-make build/tests/vm/mmap-exit.result
-pintos -p ./build/tests/vm/mmap-exit -a mmap-exit -p ./build/tests/vm/child-mm-wrt -a child-mm-wrt -- -q
-pintos -v --gdb -- run mmap-exit
-
+make build/tests/vm/pt-grow-stack.result
+pintos -p ./build/tests/vm/pt-grow-stack -a pt-grow-stack -p ../tests/vm/sample.txt -a sample.txt -- -q
+pintos -v --gdb -- run pt-grow-stack
