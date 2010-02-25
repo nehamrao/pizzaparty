@@ -109,7 +109,8 @@ struct thread
 /* yinfeng ******************************************************************/
     struct list mmap_list;              /* list of mmaped files */
     int next_mapid;                 /* next available mmaped file id */
-    void* stack_bound;                  /* boundary of stack page */
+    void * user_esp;                  /* user esp */
+    void * stack_bound; 	      /* stack bound */
 /* yinfeng ******************************************************************/
 
     /* Owned by thread.c. */

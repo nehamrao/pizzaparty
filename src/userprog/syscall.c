@@ -81,6 +81,8 @@ syscall_handler (struct intr_frame *f)
 {
   /* Get syscall number */
   int syscall_no = (int)(read_stack (f, 0));
+  
+  thread_current ()->user_esp = f->esp;
 
   /* Dispatch to individual calls */
   uint32_t arg1, arg2, arg3;
