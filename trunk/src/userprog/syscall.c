@@ -640,10 +640,6 @@ add_file (struct thread* t, struct file_info* f_info)
 static bool
 checkvaddr(const void * vaddr, unsigned size)
 {
-  uint8_t *pcheck;
-
-  struct thread *t = thread_current ();
-
   /* If the address exceeds PHYS_BASE, exit -1 */
   if (!is_user_vaddr (vaddr + size)) 
     return false;

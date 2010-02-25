@@ -207,19 +207,6 @@ page_fault (struct intr_frame *f)
   /* Address not present */
   if (ps == NULL) goto bad_page_fault;
 
-  /* yinfeng ********************************************/
-  /* Sharing */
-  /* The page's data might even already be in a page frame
-     but not in the page table, link pte to that frame */
-  /* TODO disable sharing for now, if already in POS_MEM, why page fault */
-#if 0
-  if ((ps->fs->flag & POSBITS) == POS_MEM) 
-    {
-      *pte = pte_create_user (ps->fs->vaddr, !(ps->fs->flag & FS_READONLY));
-      goto normal_page_fault;
-    }
-#endif
-
   /* All other normal page_fault situation */
   goto normal_page_fault;
 
