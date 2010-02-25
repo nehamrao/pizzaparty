@@ -105,11 +105,8 @@ bool swap_in (struct frame_struct *pframe)
   }
   else
   {
-    // TODO//
-
-    PANIC ("Eviction error, flag not set.\n");
-    palloc_free_page (kpage);
-    return false;
+    /* Already in memeory, other processes race to swap_in the frame */
+    return true;
   }
 
   if (device == fs_device)
