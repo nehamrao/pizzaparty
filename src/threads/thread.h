@@ -127,6 +127,7 @@ struct file_info
 
 /* Global lock on file system and swap system */
 struct lock glb_lock_filesys;
+struct thread *lock_filesys_holder;
 struct lock glb_lock_swapsys;
 
 /* Metadata for process, which could be retrieved by parent process even

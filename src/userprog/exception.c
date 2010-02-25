@@ -130,6 +130,7 @@ page_fault (struct intr_frame *f)
   bool not_present;  /* True: not-present page, false: writing r/o page. */
   bool write;        /* True: access was write, false: access was read. */
   bool user;         /* True: access by user, false: access by kernel. */
+  bool holding_filesys_lock;
   void *fault_addr;  /* Fault address. */
 
   /* Obtain faulting address, the virtual address that was
@@ -154,13 +155,13 @@ page_fault (struct intr_frame *f)
   user = (f->error_code & PF_U) != 0;
 
   /* Here the handler part begins */
+  struct thread *t = thread_current ();
 
   /* The address should not be present */
   if (!not_present) 
     goto bad_page_fault;
 
   /* Get user_esp for possible stack growth */
-  struct thread *t = thread_current ();
   struct page_struct *ps = NULL;
   void *user_esp;
   if (user)
@@ -215,13 +216,30 @@ page_fault (struct intr_frame *f)
 
   /* No entry in supplemental page table indicates a bad address */
   if (ps == NULL) goto bad_page_fault;
-
-  /* All other normal page_faults can come here */
+  
+  /* Normal page_faults can come here */
   goto normal_page_fault;
 
 normal_page_fault:              /* Swap in the page */
-  if (!swap_in (ps->fs))
+
+  holding_filesys_lock = false;
+  if (lock_filesys_holder == t)
+  {
+    holding_filesys_lock = true;
+    lock_filesys_holder = NULL;
+    lock_release (&glb_lock_filesys);
+  }
+  bool success = swap_in (ps->fs);
+  if (!success)
     goto bad_page_fault;
+
+  /* If previously holding the filesys_lock, reacquire the lock */
+  if (holding_filesys_lock)
+  {
+    lock_acquire (&glb_lock_filesys);
+    lock_filesys_holder = t;
+  }
+
   return;
 
 bad_page_fault:                 /* Terminate the process */
