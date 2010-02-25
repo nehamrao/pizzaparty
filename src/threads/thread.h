@@ -125,8 +125,9 @@ struct file_info
     struct file* p_file;                /* Pointer to actual file structure */
   };
 
-/* Global lock on function call to filesys.h and file.h */
+/* Global lock on file system and swap system */
 struct lock glb_lock_filesys;
+struct lock glb_lock_swapsys;
 
 /* Metadata for process, which could be retrieved by parent process even
    after the process exits. */

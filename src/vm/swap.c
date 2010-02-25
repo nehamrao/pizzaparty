@@ -5,6 +5,7 @@
 #include "swap.h"
 #include "frame.h"
 #include "devices/block.h"
+#include "threads/thread.h"
 #include "threads/palloc.h"
 #include "threads/vaddr.h"
 #include "threads/synch.h"
@@ -66,9 +67,7 @@ bool swap_in (struct frame_struct *pframe)
   if (kpage == NULL)
   {
     /* Evict to get a frame */
-   // lock_acquire (&swap_set_lock);
     kpage = sup_pt_evict_frame ();
-   //  lock_release (&swap_set_lock);
     if (kpage == NULL)
     {
       PANIC ("Out of swap space!\n");
@@ -116,10 +115,20 @@ bool swap_in (struct frame_struct *pframe)
   /* Read from disk or swap */
   block_sector_t i;
 
+  if (device == fs_device)
+    lock_acquire (&glb_lock_filesys);
+  else 
+    lock_acquire (&glb_lock_swapsys);
+
   for (i = 0; i < PGSIZE / BLOCK_SECTOR_SIZE; i++)
   {
     block_read (device, sector_no + i, kpage + BLOCK_SECTOR_SIZE * i); 
   }
+
+  if (device == fs_device)
+    lock_release (&glb_lock_filesys);
+  else 
+    lock_release (&glb_lock_swapsys);  
 
   /* Set remaining of the page to 0, only necessary for disk */
   if ((length < PGSIZE) && (device == fs_device))
@@ -214,11 +223,23 @@ write:
     return false;
 
   /* Write to disk or swap device */
-  int i = 0;
+  int i;
+
+  if (device == fs_device)
+    lock_acquire (&glb_lock_filesys);
+  else 
+    lock_acquire (&glb_lock_swapsys);
+
   for (i = 0; i < PGSIZE / BLOCK_SECTOR_SIZE; i++)
   {
     block_write (device, sector_no + i, kpage + BLOCK_SECTOR_SIZE * i); 
   }
+
+  if (device == fs_device)
+    lock_release (&glb_lock_filesys);
+  else 
+    lock_release (&glb_lock_swapsys);  
+
   return true;
 
 done:
