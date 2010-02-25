@@ -112,21 +112,26 @@ bool swap_in (struct frame_struct *pframe)
     return false;
   }
 
-  /* Read from disk or swap */
-  block_sector_t i;
-
   if (device == fs_device)
+  {
     lock_acquire (&glb_lock_filesys);
+    lock_filesys_holder = thread_current ();
+  }
   else 
     lock_acquire (&glb_lock_swapsys);
 
+  /* Read from disk or swap */
+  block_sector_t i;
   for (i = 0; i < PGSIZE / BLOCK_SECTOR_SIZE; i++)
   {
     block_read (device, sector_no + i, kpage + BLOCK_SECTOR_SIZE * i); 
   }
 
   if (device == fs_device)
+  {
+    lock_filesys_holder = NULL;
     lock_release (&glb_lock_filesys);
+  }
   else 
     lock_release (&glb_lock_swapsys);  
 
@@ -226,7 +231,10 @@ write:
   int i;
 
   if (device == fs_device)
+  {
     lock_acquire (&glb_lock_filesys);
+    lock_filesys_holder = thread_current ();
+  }
   else 
     lock_acquire (&glb_lock_swapsys);
 
@@ -236,7 +244,10 @@ write:
   }
 
   if (device == fs_device)
+  {
+    lock_filesys_holder = NULL;
     lock_release (&glb_lock_filesys);
+  }
   else 
     lock_release (&glb_lock_swapsys);  
 

@@ -230,7 +230,9 @@ _create (const char *file, unsigned initial_size)
 
   /* protected filesys operation: create file */
   lock_acquire (&glb_lock_filesys);
+  lock_filesys_holder = thread_current ();
   bool success = filesys_create (file, initial_size);
+  lock_filesys_holder = NULL;
   lock_release (&glb_lock_filesys);
 
   return success;
@@ -247,7 +249,9 @@ _remove (const char *file)
 
   /* protected filesys operation: remove file */
   lock_acquire (&glb_lock_filesys);
+  lock_filesys_holder = thread_current ();
   bool success = filesys_remove (file);
+  lock_filesys_holder = NULL;
   lock_release (&glb_lock_filesys);
 
   return success;
@@ -264,7 +268,9 @@ _open (const char *file)
 
   /* protected filesys operation: open file */
   lock_acquire (&glb_lock_filesys);
+  lock_filesys_holder = thread_current ();
   struct file* f_struct = filesys_open (file);
+  lock_filesys_holder = NULL;
   lock_release (&glb_lock_filesys);
 
   /* If open fails, return -1 */
@@ -300,7 +306,9 @@ _filesize (int fd)
   /* Protect filesys operation: get file size */
   struct thread* t = thread_current ();
   lock_acquire (&glb_lock_filesys);
+  lock_filesys_holder = thread_current ();
   int retval = (int) file_length (t->array_files[fd]->p_file);
+  lock_filesys_holder = NULL;
   lock_release (&glb_lock_filesys);
 
   /* Retval is file size in bytes */
@@ -340,11 +348,14 @@ _read (int fd, void *buffer, unsigned size)
       /* protected filesys operation:
          read and record length of read */
       lock_acquire (&glb_lock_filesys);
+      lock_filesys_holder = thread_current ();
+
       result = file_read_at (pf, buffer, size, file_offset);
 
       /* increment position within file for current thread */
       t->array_files[fd]->pos += result;
 
+      lock_filesys_holder = NULL;
       lock_release (&glb_lock_filesys);
     }
   return result;
@@ -378,10 +389,14 @@ _write (int fd, const void *buffer, unsigned size)
       /* Protect filesys operation:
          write and record length of read */
       lock_acquire (&glb_lock_filesys);
+      lock_filesys_holder = thread_current ();
+
       result = file_write_at (pf, buffer, size, file_offset);
 
       /* Increment position within file for current thread */
       t->array_files[fd]->pos += result;
+
+      lock_filesys_holder = NULL;
       lock_release (&glb_lock_filesys);
     }
 
@@ -435,11 +450,13 @@ _close (int fd)
 
   /* Protect filesys operation: close file */
   lock_acquire (&glb_lock_filesys);
+  lock_filesys_holder = thread_current ();
 
   free (t->array_files[fd]);
   t->array_files[fd] = NULL;
-
   file_close (p_file);
+
+  lock_filesys_holder = NULL;
   lock_release (&glb_lock_filesys);
 }
 
@@ -491,7 +508,11 @@ _mmap (int fd, void *addr)
 
   /* Reopen to get an independent reference to the file */
   lock_acquire (&glb_lock_filesys);
+  lock_filesys_holder = thread_current ();
+
   struct file* new_file_ref = file_reopen (t->array_files[fd]->p_file);
+
+  lock_filesys_holder = NULL;
   lock_release (&glb_lock_filesys);
   if (new_file_ref == NULL)
     {
