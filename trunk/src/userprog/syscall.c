@@ -458,7 +458,7 @@ _mmap (int fd, void *addr)
       addr == 0 ||                      /* at virtual address 0 */
       fd == STDIN_FILENO ||             /* stdin */
       fd == STDOUT_FILENO ||            /* stdout */
-      _filesize (fd) == 0)               /* length file 0 */
+      _filesize (fd) == 0)              /* length file 0 */
     {
       /* Fail operation */
       return MAP_FAILED;
@@ -646,14 +646,6 @@ checkvaddr(const void * vaddr, unsigned size)
   if (!is_user_vaddr (vaddr + size)) 
     return false;
 
-  /* Check if every page is mapped */
-  for (pcheck = pg_round_down (vaddr); 
-       pcheck <= pg_round_down (vaddr + size);)
-    {
-      if (!pagedir_get_page (t->pagedir, pcheck))
-        return false;
-      pcheck += PGSIZE;      
-    } 
   return true;
 }
 
