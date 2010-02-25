@@ -78,7 +78,7 @@ sup_pt_init (void)
 }
 
 /* Create an entry to sup_pt, according to the given info */
-bool 
+struct page_struct * 
 sup_pt_add (uint32_t *pd, void *upage, uint8_t *vaddr, size_t length,
             uint32_t flag, block_sector_t sector_no)
 {
@@ -89,7 +89,7 @@ sup_pt_add (uint32_t *pd, void *upage, uint8_t *vaddr, size_t length,
   struct page_struct *ps =
     (struct page_struct*) malloc (sizeof (struct page_struct));
   if (ps == NULL)
-    return false;
+    return NULL;
 
   /* Fill in sup_pt entry info */
   ps->key = (uint32_t) pte;
@@ -97,7 +97,7 @@ sup_pt_add (uint32_t *pd, void *upage, uint8_t *vaddr, size_t length,
   if (ps->fs == NULL)
   {
     free (ps);
-    return false;
+    return NULL;
   }
   ps->fs->vaddr = vaddr;
   ps->fs->length = length;
@@ -113,7 +113,7 @@ sup_pt_add (uint32_t *pd, void *upage, uint8_t *vaddr, size_t length,
   {
     free (ps->fs);
     free (ps);
-    return false;
+    return NULL;
   }
   pshr->pte = pte;
   list_push_back (&ps->fs->pte_list, &pshr->elem);
@@ -124,11 +124,11 @@ sup_pt_add (uint32_t *pd, void *upage, uint8_t *vaddr, size_t length,
   /* Register at frame table */
   list_push_back (&frame_list, &ps->fs->elem);
 
-  return true;
+  return ps;
 }
 
 /* Map shared memory */
-bool 
+struct page_struct *
 sup_pt_shared_add (uint32_t *pd, void *upage, struct frame_struct *fs)
 {
   /* Find pte */
@@ -138,7 +138,7 @@ sup_pt_shared_add (uint32_t *pd, void *upage, struct frame_struct *fs)
   struct page_struct *ps;
   ps = malloc (sizeof (struct page_struct));
   if (ps == NULL)
-    return false;
+    return NULL;
   ps->key = (uint32_t) pte;
   ps->fs = fs;
   hash_insert (&sup_pt, &ps->elem);
@@ -150,12 +150,12 @@ sup_pt_shared_add (uint32_t *pd, void *upage, struct frame_struct *fs)
   if (pshr == NULL)
     {
       free (ps);
-      return false;
+      return NULL;
     }
   pshr->pte = pte;
   list_push_back (&ps->fs->pte_list, &pshr->elem);
 
-  return true;
+  return ps;
 }
 
 /* Delete an entry from sup_pt, given upage */
@@ -460,7 +460,7 @@ mark_page (void *upage, uint8_t *addr,
   if (!(pagedir_get_page (t->pagedir, upage) == NULL))
     return false;
 
-  return sup_pt_add (t->pagedir, upage, addr, length, flag, sector_no);
+  return (sup_pt_add (t->pagedir, upage, addr, length, flag, sector_no) != NULL);
 }
 
 

@@ -157,8 +157,34 @@ page_fault (struct intr_frame *f)
 
   /* Access in kernel address space is not valid */
   if (!user) goto bad_page_fault;
+  if (!not_present) goto bad_page_fault;
 
   struct thread *t = thread_current ();
+  struct page_struct *ps;
+//  printf ("fault_addr = %lx\n", fault_addr);
+
+#if 1
+  /* Stack growth */
+  if (not_present && write && (fault_addr < t->stack_bound) &&
+      (fault_addr >= t->stack_bound - PGSIZE * 1024))
+    {
+      /* Add a sup_pt entry for this newly added stack page */
+      uint32_t flag = POS_SWAP | TYPE_Stack | FS_ZERO;
+      void *upage = t->stack_bound - PGSIZE;
+      while (upage >= pg_round_down (fault_addr))
+      {
+        ps = sup_pt_add (t->pagedir, upage, NULL, PGSIZE, flag, 0);
+        if (ps == NULL)
+          goto bad_page_fault;
+        upage -= PGSIZE;
+      }
+    
+      /* Now the stack is expanded by one page */
+      t->stack_bound = pg_round_down (fault_addr);
+      goto normal_page_fault;
+    }
+
+#endif
 
   /* Get page directory entry */
   uint32_t *pd = t->pagedir;
@@ -166,33 +192,12 @@ page_fault (struct intr_frame *f)
   if (*pde == 0)
     {
       goto bad_page_fault;
-      /* TODO disable stack growth for now */
-#if 1
-      /* Stack growth */
-      if (write && fault_addr < t->stack_bound &&
-          fault_addr > t->stack_bound - PGSIZE)
-        {
-          /* Add a sup_pt entry for this newly added stack page */
-          uint32_t flag = POS_MEM | TYPE_Stack | FS_ZERO;
-          bool success_pt_add = sup_pt_add (t->pagedir,
-            t->stack_bound - PGSIZE, NULL, 0, flag, SECTOR_ERROR);
-    
-          if (!success_pt_add)
-            goto bad_page_fault;
-    
-          /* Now the stack is expanded by one page */
-          t->stack_bound -= PGSIZE;
-        }
-      /* Other bad address */
-      else
-        goto bad_page_fault;
-#endif
     }
 
   /* Get supplementale page table entry */
   uint32_t *pt = pde_get_pt (*pde);
   uint32_t *pte = pt + pt_no (fault_addr);
-  struct page_struct *ps = sup_pt_ps_lookup (pte);
+  ps = sup_pt_ps_lookup (pte);
 
   /* Address not present */
   if (ps == NULL) goto bad_page_fault;

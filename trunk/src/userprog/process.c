@@ -543,6 +543,8 @@ setup_stack (void **esp)
       if (success)
       {
         *esp = PHYS_BASE; 
+        struct thread *t = thread_current ();
+        t->stack_bound = addr;
       }
       else
       {
