@@ -92,11 +92,9 @@ kill (struct intr_frame *f)
     case SEL_UCSEG:
       /* User's code segment, so it's a user exception, as we
          expected.  Kill the user process.  */
-      thread_current ()->process_info->exit_status = -1; 
       printf ("%s: dying due to interrupt %#04x (%s).\n",
               thread_name (), f->vec_no, intr_name (f->vec_no));
       intr_dump_frame (f);
-      thread_exit ();
 
     case SEL_KCSEG:
       /* Kernel's code segment, which indicates a kernel bug.
@@ -157,11 +155,8 @@ page_fault (struct intr_frame *f)
 
   /* Access in kernel address space is not valid */
   if (!not_present) 
-  {
-    thread_current ()->process_info->exit_status = -1;
-    thread_exit ();
-    return;   
-  }
+    goto bad_page_fault;
+
   struct thread *t = thread_current ();
   struct page_struct *ps;
 //  printf ("fault_addr = %lx\n", fault_addr);
