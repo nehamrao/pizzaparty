@@ -21,6 +21,7 @@
 #include "threads/pte.h"
 #include "threads/malloc.h"
 #include "vm/frame.h"
+#include "userprog/syscall.h"
 
 thread_func start_process NO_RETURN;
 //static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -146,12 +147,29 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
   
+ /*n (&cur->_list); e != list_end (&all_list);
+       e = list_next (e))
+    {
+      struct thread *t = list_entry (e, struct thread, allelem);
+      func (t, aux);
+    }*/
+  int i, map_number;
+  map_number = cur->next_mapid;
+  if (map_number != 0)
+  {
+    for (i = 0; i < map_number; i++)
+    {
+      _munmap (i);
+    }
+  }
+
   int fd;
   for (fd = 2;fd < 128; fd ++)
   {
       if (cur->array_files[fd] != NULL)
         {
           /* Close all files and free their resources */
+           
           file_close (cur->array_files[fd]->p_file);
           free (cur->array_files[fd]);
         }    

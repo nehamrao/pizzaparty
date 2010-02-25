@@ -156,9 +156,12 @@ page_fault (struct intr_frame *f)
   user = (f->error_code & PF_U) != 0;
 
   /* Access in kernel address space is not valid */
-  if (!user) goto bad_page_fault;
-  if (!not_present) goto bad_page_fault;
-
+  if (!not_present) 
+  {
+    thread_current ()->process_info->exit_status = -1;
+    thread_exit ();
+    return;   
+  }
   struct thread *t = thread_current ();
   struct page_struct *ps;
 //  printf ("fault_addr = %lx\n", fault_addr);
@@ -176,6 +179,7 @@ page_fault (struct intr_frame *f)
         ps = sup_pt_add (t->pagedir, upage, NULL, PGSIZE, flag, 0);
         if (ps == NULL)
           goto bad_page_fault;
+
         upage -= PGSIZE;
       }
     
@@ -223,11 +227,12 @@ page_fault (struct intr_frame *f)
 
 normal_page_fault:              /* Swap in the page */
   if (!swap_in (ps->fs))
-    kill (f);
+    goto bad_page_fault;
   return;
 
 bad_page_fault:                 /* Terminate the process */
-  kill (f);
+  thread_current ()->process_info->exit_status = -1;
+  thread_exit ();
   return;
 }
 

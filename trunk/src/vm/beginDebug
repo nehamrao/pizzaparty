@@ -1,6 +1,7 @@
 pintos-mkdisk filesys.dsk --filesys-size=2
 pintos-mkdisk swap.dsk --swap-size=4
 pintos -f -q
-make build/tests/vm/pt-write-code2.result
-pintos -p ./build/tests/vm/pt-write-code2 -a pt-write-code2 -- -q
-pintos -v --gdb -- run pt-write-code2
+make build/tests/vm/mmap-exit.result
+pintos -p ./build/tests/vm/mmap-exit -a mmap-exit -p ./build/tests/vm/child-mm-wrt -a child-mm-wrt -- -q
+pintos -v --gdb -- run mmap-exit
+
