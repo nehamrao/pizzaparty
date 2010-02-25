@@ -42,7 +42,7 @@ void swap_free (uint32_t * pte)
    {  
       lock_acquire (&swap_set_lock);
       bitmap_set_multiple (swap_free_map, ps->fs->sector_no, PGSIZE / BLOCK_SECTOR_SIZE, false);
-       lock_release (&swap_set_lock);
+      lock_release (&swap_set_lock);
    }
    return;
 
@@ -106,6 +106,8 @@ bool swap_in (struct frame_struct *pframe)
   }
   else
   {
+    // TODO//
+
     PANIC ("Eviction error, flag not set.\n");
     palloc_free_page (kpage);
     return false;
