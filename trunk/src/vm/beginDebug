@@ -1,6 +1,6 @@
 pintos-mkdisk filesys.dsk --filesys-size=2
 pintos-mkdisk swap.dsk --swap-size=4
 pintos -f -q
-make build/tests/vm/page-linear.result
-pintos -p ./build/tests/vm/page-linear -a page-linear -- -q
-pintos -v --gdb -- run page-linear
+#make build/tests/vm/mmap-read.result
+pintos -p ./build/tests/vm/mmap-read -a mmap-read -p ../tests/vm/sample.txt -a sample.txt -- -q
+pintos -v --gdb -- run mmap-read

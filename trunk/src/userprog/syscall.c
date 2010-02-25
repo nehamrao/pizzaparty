@@ -16,7 +16,7 @@
 #include "userprog/pagedir.h"
 #include "vm/frame.h"
 
-static void syscall_handler (struct intr_frame *);
+//static void syscall_handler (struct intr_frame *);
 
 
 /**
@@ -36,8 +36,8 @@ static void _seek (int fd, unsigned position);
 static unsigned _tell (int fd);
 static void _close (int fd);
 /* yinfeng ******************************************************************/
-static mapid_t _mmap (int fd, void *addr);
-static void _munmap (mapid_t mapping);
+//static mapid_t _mmap (int fd, void *addr);
+//static void _munmap (mapid_t mapping);
 /* yinfeng ******************************************************************/
 
 
@@ -74,7 +74,7 @@ syscall_init (void)
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
-static void
+void
 syscall_handler (struct intr_frame *f) 
 {
   /* Get syscall number */
@@ -157,7 +157,7 @@ syscall_handler (struct intr_frame *f)
 /* yinfeng ******************************************************************/
       case SYS_MMAP:
         arg1 = read_stack (f, 4);
-        arg2 = read_stack (f, 4);
+        arg2 = read_stack (f, 8);
         f->eax = (uint32_t)_mmap ((int)arg1, (void*)arg2);
         break;
 
@@ -445,7 +445,7 @@ _close (int fd)
 }
 
 /* yinfeng ******************************************************************/
-static mapid_t
+mapid_t
 _mmap (int fd, void *addr)
 {
   struct thread* t = thread_current ();
@@ -465,9 +465,10 @@ _mmap (int fd, void *addr)
   /* Also fail if overlap occurs */
   void *add = NULL;
   int f_size = _filesize (fd);
-  for (add = addr; add < addr + f_size; addr += PGSIZE)
+  for (add = addr; add < addr + f_size; add += PGSIZE)
     {
       /* TODO how to determine exactly overlap */
+      //printf ("%ld,%ld,%ld,%ld\n", add, addr, f_size, PGSIZE);
       if (pagedir_get_page (t->pagedir, add) != NULL)
         {
           /* Fail operation */
@@ -525,7 +526,7 @@ _mmap (int fd, void *addr)
 /* yinfeng ******************************************************************/
 
 /* yinfeng ******************************************************************/
-static void
+void
 _munmap (mapid_t mapping)
 {
   struct thread* t = thread_current ();
