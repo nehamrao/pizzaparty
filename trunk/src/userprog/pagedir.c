@@ -41,17 +41,19 @@ pagedir_destroy (uint32_t *pd)
         uint32_t *pt = pde_get_pt (*pde);
         uint32_t *pte;
         
+        /* Clean up supplemental page table along the way */
         for (pte = pt; pte < pt + PGSIZE / sizeof *pte; pte++)
           if (*pte & PTE_P) 
-          {
-/****************************************************************************/
-  	  /* If this is the last entry, then free the frame */	    
-            if (sup_pt_delete (pte))
-              palloc_free_page (pte_get_page (*pte));
-/****************************************************************************/
-          }
+            {
+              /* Free the frame when this is the last entry */
+              if (sup_pt_delete (pte))
+                palloc_free_page (pte_get_page (*pte));
+            }
           else
-          swap_free (pte);
+            {
+              /* Free the swap slot */
+              swap_free (pte);
+            }
         palloc_free_page (pt);
       }
   palloc_free_page (pd);
@@ -122,13 +124,13 @@ pagedir_set_page (uint32_t *pd, void *upage, void *kpage, bool writable)
     {
       ASSERT ((*pte & PTE_P) == 0);
       *pte = pte_create_user (kpage, writable);
-/****************************************************************************/
+
+      /* Map pte to kpage and update relevant bits */
       if (!sup_pt_set_memory_map (pte, kpage))
       {
         *pte &= ~PTE_P;
         return false;
       }
-/****************************************************************************/
       return true;
     }
   else

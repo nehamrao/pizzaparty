@@ -20,12 +20,21 @@ struct list frame_list;
 struct frame_struct* evict_pointer;
 
 /* Hash function used to organize supplemental page table as a hash table */
-static unsigned sup_pt_hash_func (const struct hash_elem *element,
-                                  void *aux UNUSED);
-static bool sup_pt_less_func (const struct hash_elem *a,
-                              const struct hash_elem *b,
-                              void *aux UNUSED);
+static unsigned
+sup_pt_hash_func (const struct hash_elem *element, void *aux UNUSED);
+static bool
+sup_pt_less_func (const struct hash_elem *a, const struct hash_elem *b,
+                  void *aux UNUSED);
 
+
+/* Initialize supplemental page table and frame table */
+void 
+sup_pt_init (void)
+{
+  hash_init (&sup_pt, sup_pt_hash_func, sup_pt_less_func, NULL);
+  list_init (&frame_list);
+  evict_pointer = NULL;
+}
 
 /* Given pd and virtual address, find the page table entry */
 uint32_t *
@@ -40,13 +49,14 @@ sup_pt_pte_lookup (uint32_t *pd, const void *vaddr, bool create)
   pde = pd + pd_no (vaddr);
   if (*pde == 0) 
   {
-    if (create)
+    if (create) /* Create as instructed */
     {
       pt = palloc_get_page (PAL_ZERO);
       if (pt == NULL)
         return NULL;
       *pde = pde_create (pt);    
-    } else 
+    }
+    else 
     {
       return NULL;
     }
@@ -62,19 +72,11 @@ struct page_struct *
 sup_pt_ps_lookup (uint32_t *pte)
 {
   struct page_struct ps;
-  struct hash_elem *e;
   ps.key = (uint32_t)pte;
-  e = hash_find (&sup_pt, &ps.elem);
-  return (e != NULL) ? hash_entry (e, struct page_struct, elem) : NULL;
-}
 
-/* Initialize supplemental page table and frame table */
-void 
-sup_pt_init (void)
-{
-  hash_init (&sup_pt, sup_pt_hash_func, sup_pt_less_func, NULL);
-  list_init (&frame_list);
-  evict_pointer = NULL;
+  struct hash_elem *e = hash_find (&sup_pt, &ps.elem);
+
+  return (e != NULL) ? hash_entry (e, struct page_struct, elem) : NULL;
 }
 
 /* Create an entry to sup_pt, according to the given info */
@@ -85,7 +87,7 @@ sup_pt_add (uint32_t *pd, void *upage, uint8_t *vaddr, size_t length,
   /* Find pte */
   uint32_t *pte = sup_pt_pte_lookup (pd, upage, true);
 
-  /* Allocate page_struct, ie, a new entry in sup_pt */
+  /* Allocate page_struct, i.e., a new entry in sup_pt */
   struct page_struct *ps =
     (struct page_struct*) malloc (sizeof (struct page_struct));
   if (ps == NULL)
@@ -103,10 +105,9 @@ sup_pt_add (uint32_t *pd, void *upage, uint8_t *vaddr, size_t length,
   ps->fs->length = length;
   ps->fs->flag = flag;
   ps->fs->sector_no = sector_no; 
-
   list_init (&ps->fs->pte_list);
 
-  // perhaps lock needed here *** ???
+  /* Register the page itself to pte_list of frame_struct */
   struct pte_shared *pshr =
     (struct pte_shared *)malloc (sizeof (struct pte_shared));
   if (pshr == NULL)
@@ -127,7 +128,7 @@ sup_pt_add (uint32_t *pd, void *upage, uint8_t *vaddr, size_t length,
   return ps;
 }
 
-/* Map shared memory */
+/* Create a sup_pt entry, but share with others for an exsiting frame */
 struct page_struct *
 sup_pt_shared_add (uint32_t *pd, void *upage, struct frame_struct *fs)
 {
@@ -143,7 +144,6 @@ sup_pt_shared_add (uint32_t *pd, void *upage, struct frame_struct *fs)
   ps->fs = fs;
   hash_insert (&sup_pt, &ps->elem);
 
-  // perhaps lock needed here *** ???
   /* Register share memory in frame table */
   struct pte_shared* pshr =
     (struct pte_shared*)malloc (sizeof (struct pte_shared));
@@ -163,6 +163,7 @@ bool
 sup_pt_find_and_delete (uint32_t *pd, void *upage)
 {
   uint32_t *pte = sup_pt_pte_lookup (pd, upage, false);
+
   if (pte != NULL)
     return sup_pt_delete (pte);
   else 
@@ -177,7 +178,7 @@ sup_pt_delete (uint32_t *pte)
   if (ps == NULL)
     return false;
 
-  bool last_entry = false;
+  bool last_entry = false;  /* Last entry pointing to a frame_struct */
   struct list *list = &ps->fs->pte_list;
   struct list_elem *e;
   for (e = list_begin (list); e != list_end (list); e = list_next (e))
@@ -212,8 +213,7 @@ sup_pt_delete (uint32_t *pte)
   return last_entry;
 }
 
-/* Used when swap in
-   map the pages to frame in memeory */
+/* Used when swapping in, map the pages to frame in memeory */
 void
 sup_pt_set_swap_in (struct frame_struct *fs, void *kpage)
 {
@@ -223,8 +223,8 @@ sup_pt_set_swap_in (struct frame_struct *fs, void *kpage)
   sup_pt_fs_set_pte_list (fs, kpage, true);
 }
 
-/* Used when swap out
-   register flags relecting that the frame is no longer in mem */
+/* Used when swapping out
+   register flags reflecting that the frame is no longer in mem */
 void
 sup_pt_set_swap_out (struct frame_struct *fs,
                      block_sector_t sector_no,
@@ -237,7 +237,7 @@ sup_pt_set_swap_out (struct frame_struct *fs,
   sup_pt_fs_set_pte_list (fs, NULL, false);
 }
 
-/* ??? */
+/* Set up mapping from kpage to the frame associated with pte */
 bool 
 sup_pt_set_memory_map (uint32_t *pte, void *kpage)
 {
@@ -248,12 +248,13 @@ sup_pt_set_memory_map (uint32_t *pte, void *kpage)
   return true;
 }
 
-/* Determine if a frame is dirty
-   return true when fs->flag indicates dirty or
-          any one of the pte's indicates dirty */
+/* Determine if a frame is dirty return true when
+        fs->flag indicates dirty or
+        any one of the pte's indicates dirty */
 bool
 sup_pt_fs_is_dirty (struct frame_struct *fs)
 {
+  /* Frame struct is dirty */
   if (fs->flag & FS_DIRTY)
     {
       return true;
@@ -264,6 +265,8 @@ sup_pt_fs_is_dirty (struct frame_struct *fs)
   for (e = list_begin (list); e != list_end (list); e = list_next (e))
   {
     struct pte_shared *pte_shared = list_entry (e, struct pte_shared, elem);
+
+    /* Found a dirty pte */
     if ((*pte_shared->pte & PTE_D) != 0)
       {
         /* Set frame_struct flag is enough for future query */
@@ -276,7 +279,7 @@ sup_pt_fs_is_dirty (struct frame_struct *fs)
   return false;
 }
 
-/* Set frame_struct and all linked pte's dirty bits */
+/* Set frame_struct and all linked ptes' dirty bits */
 void 
 sup_pt_fs_set_dirty (struct frame_struct *fs, bool dirty)
 {
@@ -303,11 +306,8 @@ sup_pt_fs_set_dirty (struct frame_struct *fs, bool dirty)
   pagedir_activate (t->pagedir);
 }
 
-
-/* yinfeng **********************************************************
-   This function seems to run good, but do we really need this
-   single function solving two tasks at the same time?
-   Will it be better we separate them into scan() and reset_access() ?*/
+/* Find any accessed pte's associated with frame_struct
+   also reset the accessed bits for future use */
 bool 
 sup_pt_fs_scan_and_reset_access (struct frame_struct *fs)
 {
@@ -323,6 +323,10 @@ sup_pt_fs_scan_and_reset_access (struct frame_struct *fs)
       *pte_shared->pte &= ~PTE_A;       /* Reset pte's */
     }
   }
+
+  /* Flush TLB */
+  struct thread* t = thread_current ();
+  pagedir_activate (t->pagedir);
 
   /* Refer to sup_pt_delete() for synching access bit */
   if (fs->flag & FS_ACCESS)
@@ -343,7 +347,7 @@ sup_pt_evict_frame ()
   struct list_elem *e;
 
   /* Get evict_pointer, initialize if necessary */
-  if (evict_pointer == NULL) 
+  if (evict_pointer == NULL)
     {
       e = list_begin (list); 
       evict_pointer = list_entry (e, struct frame_struct, elem);
@@ -360,9 +364,8 @@ sup_pt_evict_frame ()
         }
       evict_pointer = list_entry (e, struct frame_struct, elem);
 
-      /* yinfeng **********************************************
-         Later make sure we set this FS_PINED somewhere else
-         maybe for use by synchronizaiton */
+      /* Query PINED bit */
+      /* TODO ??? */
       if ((evict_pointer->flag & FS_PINED) != 0)
       {
         printf ("PINNED\n");
@@ -373,23 +376,9 @@ sup_pt_evict_frame ()
       if ((evict_pointer->flag & POSBITS) == POS_MEM)
         if (sup_pt_fs_scan_and_reset_access (evict_pointer))
           break;
-
-      /* yinfeng **********************************************
-         first,
-         set relevant bits properly in frame_struct here
-         then,
-         deal with this case in swap out and in
-         when swap out
-             no need to actually write to swap
-             just update the linked pte's
-         when swap in
-             no need to actually read from disk
-             just update the linked pte's
-             and memset an all-zero page starting at vaddr */
     } 
 
   uint8_t *vaddr = evict_pointer->vaddr;
-
   swap_out (evict_pointer);
 
   return vaddr;
@@ -412,12 +401,6 @@ sup_pt_fs_set_pte_list (struct frame_struct *fs, uint8_t *kpage,
       bool dirty    = *pte_shared->pte & PTE_D;
       *pte_shared->pte = pte_create_user (kpage, writable);
       *pte_shared->pte |= PTE_A | (dirty ? PTE_D : 0);
-
-//      uint8_t *alias = pg_round_down (ptov (*pte_shared->pte));
-//      uint32_t *pte = sup_pt_pte_lookup (init_page_dir, alias, false);
-//      if (pte == NULL)
-//         printf ("**************************ERROR\n");
-//      *pte = *pte_shared->pte;
     }
     else 
     {
@@ -428,7 +411,6 @@ sup_pt_fs_set_pte_list (struct frame_struct *fs, uint8_t *kpage,
   /* Flush TLB */
   struct thread* t = thread_current ();
   pagedir_activate (t->pagedir);
-  return;
 }
 
 /* Hash function used to organize supplemental page table as a hash table */
@@ -460,7 +442,8 @@ mark_page (void *upage, uint8_t *addr,
   if (!(pagedir_get_page (t->pagedir, upage) == NULL))
     return false;
 
-  return (sup_pt_add (t->pagedir, upage, addr, length, flag, sector_no) != NULL);
+  return sup_pt_add (t->pagedir, upage, addr, length, flag, sector_no)
+         != NULL;
 }
 
 

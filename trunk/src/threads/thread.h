@@ -101,30 +101,31 @@ struct thread
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
     struct file_info *array_files[128]; /* Array of open files */
-    struct file *executable;		/* Record current process's executable*/
-    struct list child_list;		/* Record thread's children */
+    struct file *executable;		/* Current process's executable*/
+    struct list child_list;		/* Thread's children */
     struct process_info *process_info;  /* Process metadata */
 #endif
 
-/* yinfeng ******************************************************************/
-    struct list mmap_list;              /* list of mmaped files */
-    int next_mapid;                 /* next available mmaped file id */
-    void * user_esp;                  /* user esp */
-    void * stack_bound; 	      /* stack bound */
-/* yinfeng ******************************************************************/
+    /* For memory mapped files */
+    struct list mmap_list;              /* List of mmaped files */
+    int next_mapid;                     /* Next available mmaped file id */
+
+    /* For stack growth */
+    void * user_esp;                    /* user esp */
+    void * stack_bound; 	        /* Stack bound */
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
 
-/* structure to record relevant file information */
+/* Structure to record opened file information */
 struct file_info
   {
-    unsigned pos;                       /* position within file */
-    struct file* p_file;                /* pointer to actual file structure */
+    unsigned pos;                       /* Position within file */
+    struct file* p_file;                /* Pointer to actual file structure */
   };
 
-/* global lock on function call to filesys.h and file.h */
+/* Global lock on function call to filesys.h and file.h */
 struct lock glb_lock_filesys;
 
 /* Metadata for process, which could be retrieved by parent process even
@@ -137,25 +138,23 @@ struct process_info
     struct semaphore sema_wait;		/* Sema to ensure wait order */
     bool already_waited;		/* Whether the process has already been 
 					   waited by its parent */
-    bool parent_alive;			/* Whether the parent process is alive*/
-    bool is_alive;			/* Whether the process is alive */
+    bool parent_alive;			/* Whether parent process is alive*/
+    bool is_alive;			/* Whether process is alive */
     int exit_status;			/* Record exit status */
     int pid;				/* Record the pid */
     struct list_elem elem;		/* Element in child_list of its parent 
 					   thread */
   };
 
-/* yinfeng ******************************************************************/
-/* */
+/* Memory mapped file mapping information 
+   from mapid to file and address o*/
 struct mmap_struct
   {
-    int mapid;                      /* mmaped file id */
-    struct file* p_file;                /* file descriptor
-                                           obtained by file_reopen() */
-    void* vaddr;                        /* begin of vaddr for mmap file */
+    int mapid;                          /* mmaped file id */
+    struct file* p_file;                /* file struct from file_reopen() */
+    void* vaddr;                        /* begin of vaddr for mmaped file */
     struct list_elem elem;
   };
-/* yinfeng ******************************************************************/
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.

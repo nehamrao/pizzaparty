@@ -23,8 +23,8 @@
 #include "vm/frame.h"
 #include "userprog/syscall.h"
 
-thread_func start_process NO_RETURN;
-//static bool load (const char *cmdline, void (**eip) (void), void **esp);
+static thread_func start_process NO_RETURN;
+static bool load (const char *cmdline, void (**eip) (void), void **esp);
 static bool argument_passing (const char *cmd_line, void **esp);
 static bool push_4byte (char** p_stack, void* val, void** esp);
 static void get_prog_file_name (const char* cmd_line, char* prog_file_name);
@@ -63,7 +63,7 @@ process_execute (const char *cmd_line)
 
 /* A thread function that loads a user process and starts it
    running. */
-void								//***************************************************
+static void
 start_process (void *file_name_)
 {
   char *file_name = file_name_;
@@ -145,14 +145,8 @@ void
 process_exit (void)
 {
   struct thread *cur = thread_current ();
-  uint32_t *pd;
   
- /*n (&cur->_list); e != list_end (&all_list);
-       e = list_next (e))
-    {
-      struct thread *t = list_entry (e, struct thread, allelem);
-      func (t, aux);
-    }*/
+  /* Clean up mmap file list */
   int i, map_number;
   map_number = cur->next_mapid;
   if (map_number != 0)
@@ -163,33 +157,23 @@ process_exit (void)
     }
   }
 
+  /* Close all files and free their resources */
   int fd;
   for (fd = 2;fd < 128; fd ++)
   {
       if (cur->array_files[fd] != NULL)
         {
-          /* Close all files and free their resources */
-           
           file_close (cur->array_files[fd]->p_file);
           free (cur->array_files[fd]);
         }    
   }
+
   /* Close executable and enable write */
   file_close (cur->executable);
 
-  /* If not kernel thread, print the exit message, update process metadata 
-     and free resources */
-  if (!(cur->is_kernel))
-  {
-    printf ("%s: exit(%d)\n", thread_name(), cur->process_info->exit_status);
-    cur->process_info->is_alive = false;
-    sema_up (&cur->process_info->sema_wait);
-    free_process_info ();
-  }
-
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
-  pd = cur->pagedir;
+  uint32_t *pd = cur->pagedir;
   if (pd != NULL) 
     {
       /* Correct ordering here is crucial.  We must set
@@ -203,10 +187,19 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
+
+  /* If not kernel thread, print the exit message, update process metadata 
+     and free resources */
+  if (!(cur->is_kernel))
+  {
+    printf ("%s: exit(%d)\n", thread_name(), cur->process_info->exit_status);
+    cur->process_info->is_alive = false;
+    sema_up (&cur->process_info->sema_wait);
+    free_process_info ();
+  }
 }
 
-/* Sets up the CPU for running user code in the current
-   thread.
+/* Sets up the CPU for running user code in the current thread.
    This function is called on every context switch. */
 void
 process_activate (void)
@@ -284,17 +277,17 @@ struct Elf32_Phdr
 #define PF_W 2          /* Writable. */
 #define PF_R 4          /* Readable. */
 
-//static bool setup_stack (void **esp);
+static bool setup_stack (void **esp);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
-//static bool load_segment (struct file *file, off_t ofs, uint32_t *upage,//***************************************************
-//                          uint32_t read_bytes, uint32_t zero_bytes,
-//                          bool writable);
+static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
+                          uint32_t read_bytes, uint32_t zero_bytes,
+                          bool writable);
 
 /* Loads an ELF executable from FILE_NAME into the current thread.
    Stores the executable's entry point into *EIP
    and its initial stack pointer into *ESP.
    Returns true if successful, false otherwise. */
-bool
+static bool
 load (const char *cmd_line, void (**eip) (void), void **esp) 
 {
   struct thread *t = thread_current ();
@@ -418,8 +411,7 @@ load (const char *cmd_line, void (**eip) (void), void **esp)
 }
 
 /* load() helpers. */
-
-//static bool install_page (void *upage, void *kpage, bool writable);	//***************************************************
+static bool install_page (void *upage, void *kpage, bool writable);
 
 /* Checks whether PHDR describes a valid, loadable segment in
    FILE and returns true if so, false otherwise. */
@@ -480,7 +472,7 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
 
    Return true if successful, false if a memory allocation error
    or disk read error occurs. */
-bool									//***************************************************
+static bool
 load_segment (struct file *file, off_t ofs, uint8_t *upage,
               uint32_t read_bytes, uint32_t zero_bytes, bool writable) 
 {
@@ -497,28 +489,8 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-/****************************************************************************/
-      /* Get a page of memory. */
-//      uint8_t *kpage = palloc_get_page (PAL_USER);
-//      if (kpage == NULL)
-//        return false;
-
-      /* Load this page. */
-//      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes) 
-//        return false;
-//      else 
-//        {
-//          palloc_free_page (kpage);
-//          return false; 
-//        }
-//      memset (kpage + page_read_bytes, 0, page_zero_bytes);
-
-      /* Add the page to the process's address space. */
-//      if (!install_page (upage, kpage, writable)) 
-//        {
-//         palloc_free_page (kpage);
-//          return false; 
-//        }
+      /* Lazy loading, instead of allocating frame right away,
+         just mark the page as if the page is swapped out */
       uint32_t flag = POS_DISK | TYPE_Executable;
       if (page_read_bytes == 0)
           flag |= FS_ZERO;
@@ -528,9 +500,9 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
       block_sector_t sector_idx =
         byte_to_sector (file_get_inode (file), ofs);
+
       if (!mark_page (upage, NULL, page_read_bytes, flag, sector_idx))
         return false;
-/****************************************************************************/
 
       /* Advance. */
       read_bytes -= page_read_bytes;
@@ -543,7 +515,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
 /* Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. */
-bool   /****************************************************************************/
+static bool
 setup_stack (void **esp) 
 {
   uint8_t *kpage;
