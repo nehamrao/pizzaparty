@@ -461,7 +461,7 @@ _mmap (int fd, void *addr)
       _filesize (fd) == 0)               /* length file 0 */
     {
       /* Fail operation */
-      return -1;
+      return MAP_FAILED;
     }
 
   /* Also fail if overlap occurs */
@@ -471,10 +471,14 @@ _mmap (int fd, void *addr)
     {
       /* TODO how to determine exactly overlap */
       //printf ("%ld,%ld,%ld,%ld\n", add, addr, f_size, PGSIZE);
-      if (pagedir_get_page (t->pagedir, add) != NULL)
+      uint32_t *pte = sup_pt_pte_lookup (t->pagedir, add, false);
+      if (pte != NULL)
         {
-          /* Fail operation */
-          return -1;
+          if (sup_pt_ps_lookup (pte) != NULL)
+            {
+              /* Fail operation */
+              return MAP_FAILED;
+            }
         }
     }
   
@@ -485,7 +489,7 @@ _mmap (int fd, void *addr)
   if (ms == NULL)
     {
       /* Fail operation */
-      return -1;
+      return MAP_FAILED;
     }
   ms->mapid = mapid;
   ms->vaddr = addr;
@@ -496,7 +500,7 @@ _mmap (int fd, void *addr)
     {
       /* Fail operation */
       free (ms);
-      return -1;
+      return MAP_FAILED;
     }
   ms->p_file = new_file_ref;
   list_push_back (&t->mmap_list, &ms->elem);
