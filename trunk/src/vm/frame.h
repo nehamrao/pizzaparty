@@ -6,6 +6,7 @@
 #include <list.h>
 #include <hash.h>
 #include "devices/block.h"
+#include "threads/synch.h"
 
 /* Position of a frame */
 #define POS_SWAP 		0x1
@@ -40,7 +41,7 @@ struct frame_struct
   uint8_t *vaddr;               /* Virtual address if on memeory */
   size_t length;                /* Length of meaningful contents */
   block_sector_t sector_no;     /* Sector # if on disk or swap */
-  lock frame_lock;		/* Lock for protecting data in frame */
+  struct lock frame_lock;	/* Lock for protecting data in frame */
   struct list pte_list;         /* A list of pte's representing
                                    user pages sharing this frame */
   struct list_elem elem;

@@ -112,7 +112,9 @@ sup_pt_add (uint32_t *pd, void *upage, uint8_t *vaddr, size_t length,
     free (ps);
     return NULL;
   }
+
   lock_init (&ps->fs->frame_lock);
+  lock_acquire (&ps->fs->frame_lock);
   ps->fs->vaddr = vaddr;
   ps->fs->length = length;
   ps->fs->flag = flag;
@@ -130,6 +132,7 @@ sup_pt_add (uint32_t *pd, void *upage, uint8_t *vaddr, size_t length,
   }
   pshr->pte = pte;
   list_push_back (&ps->fs->pte_list, &pshr->elem);
+  lock_release (&ps->fs->frame_lock);
 
   /* Register at supplemental page table */
   lock_acquire (&sup_pt_lock);
@@ -163,6 +166,7 @@ sup_pt_shared_add (uint32_t *pd, void *upage, struct frame_struct *fs)
   hash_insert (&sup_pt, &ps->elem);
   lock_release (&sup_pt_lock);
 
+  lock_acquire (&ps->fs->frame_lock);
   /* Register share memory in frame table */
   struct pte_shared* pshr =
     (struct pte_shared*)malloc (sizeof (struct pte_shared));
@@ -173,6 +177,7 @@ sup_pt_shared_add (uint32_t *pd, void *upage, struct frame_struct *fs)
     }
   pshr->pte = pte;
   list_push_back (&ps->fs->pte_list, &pshr->elem);
+  lock_release (&ps->fs->frame_lock);
 
   return ps;
 }
@@ -192,11 +197,20 @@ sup_pt_find_and_delete (uint32_t *pd, void *upage)
 /* Delete an entry from sup_pt, given pte */
 bool
 sup_pt_delete (uint32_t *pte)
-{
+{ 
   struct page_struct *ps = sup_pt_ps_lookup (pte);
   if (ps == NULL)
     return false;
 
+/* bool value pin denotes whether current function pins a frame or not */
+  bool pin = false; 
+
+  lock_acquire (&ps->fs->frame_lock);  // frame lock acquire
+  if (ps->fs->flag & FS_PINNED == 0)
+  {
+     pin = true;
+     ps->fs->flag |= FS_PINNED;  /* Pin the frame, which is about to be deleted */
+  }
   bool last_entry = false;  /* Last entry pointing to a frame_struct */
   struct list *list = &ps->fs->pte_list;
   struct list_elem *e;
@@ -224,6 +238,8 @@ sup_pt_delete (uint32_t *pte)
         lock_acquire (&frame_list_lock);
         list_remove (&ps->fs->elem);
         lock_release (&frame_list_lock);
+
+        lock_release (&ps->fs->frame_lock); // frame lock release
         free (ps->fs);
       }
       
@@ -231,9 +247,15 @@ sup_pt_delete (uint32_t *pte)
       hash_delete (&sup_pt, &ps->elem);
       lock_release (&sup_pt_lock);
       free (ps);
+      ps = NULL;
       break;
     }
   }
+  if (pin)    /* Unpin the frame */
+    ps->fs->flag &= ~FS_PINNED;
+  if  (ps != NULL)
+    lock_release (&ps->fs->frame_lock);  //frame lock release
+
   return last_entry;
 }
 
@@ -241,11 +263,14 @@ sup_pt_delete (uint32_t *pte)
 void
 sup_pt_set_swap_in (struct frame_struct *fs, void *kpage)
 {
+  lock_acquire (&fs->frame_lock);
+
   fs->vaddr = kpage;
   fs->flag = (fs->flag & POSMASK) | POS_MEM;
+  sup_pt_fs_set_pte_list (fs, kpage, true);
   fs->flag &= ~FS_PINNED;
 
-  sup_pt_fs_set_pte_list (fs, kpage, true);
+  lock_release (&fs->frame_lock);
 }
 
 /* Used when swapping out
@@ -255,11 +280,14 @@ sup_pt_set_swap_out (struct frame_struct *fs,
                      block_sector_t sector_no,
                      bool is_on_disk)
 {
+  lock_acquire (&fs->frame_lock);
+
   fs->vaddr = NULL;
   fs->sector_no = sector_no;
   fs->flag = (fs->flag & POSMASK) | (is_on_disk ? POS_DISK : POS_SWAP);
-
   sup_pt_fs_set_pte_list (fs, NULL, false);
+
+  lock_release (&fs->frame_lock);
 }
 
 /* Set up mapping from kpage to the frame associated with pte */
@@ -279,9 +307,12 @@ sup_pt_set_memory_map (uint32_t *pte, void *kpage)
 bool
 sup_pt_fs_is_dirty (struct frame_struct *fs)
 {
+  lock_acquire (&fs->frame_lock);
+
   /* Frame struct is dirty */
   if (fs->flag & FS_DIRTY)
     {
+      lock_release (&fs->frame_lock);
       return true;
     }
 
@@ -297,10 +328,11 @@ sup_pt_fs_is_dirty (struct frame_struct *fs)
         /* Set frame_struct flag is enough for future query */
         /* Refer to sup_pt_delete() for synching dirty bit */
         fs->flag |= FS_DIRTY;
+        lock_release (&fs->frame_lock);
         return true;
       }
   }
-
+  lock_release (&fs->frame_lock);
   return false;
 }
 
@@ -308,6 +340,7 @@ sup_pt_fs_is_dirty (struct frame_struct *fs)
 void 
 sup_pt_fs_set_dirty (struct frame_struct *fs, bool dirty)
 {
+  lock_acquire (&fs->frame_lock);
   /* Set frame_struct */
   if (dirty)
     fs->flag |= FS_DIRTY;
@@ -325,6 +358,7 @@ sup_pt_fs_set_dirty (struct frame_struct *fs, bool dirty)
     else 
       *pte_shared->pte &= ~PTE_D;
   }
+  lock_release (&fs->frame_lock);
 
   /* Flush TLB */
   struct thread* t = thread_current ();
@@ -338,6 +372,8 @@ sup_pt_fs_scan_and_reset_access (struct frame_struct *fs)
 {
   bool flag = false;
   struct list_elem *e;
+
+  lock_acquire (&fs->frame_lock);
   struct list *list = &fs->pte_list;
   for (e = list_begin (list); e != list_end (list); e = list_next (e))
   {
@@ -349,16 +385,17 @@ sup_pt_fs_scan_and_reset_access (struct frame_struct *fs)
     }
   }
 
-  /* Flush TLB */
-  struct thread* t = thread_current ();
-  pagedir_activate (t->pagedir);
-
   /* Refer to sup_pt_delete() for synching access bit */
   if (fs->flag & FS_ACCESS)
   {
     flag = true;
     fs->flag &= ~FS_ACCESS;             /* Reset frame_struct */
   }
+  lock_release (&fs->frame_lock);
+
+  /* Flush TLB */
+  struct thread* t = thread_current ();
+  pagedir_activate (t->pagedir);
 
   return flag;
 }
