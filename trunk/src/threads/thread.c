@@ -95,7 +95,6 @@ thread_init (void)
   list_init (&ready_list);
   list_init (&all_list);
   lock_init (&glb_lock_filesys);
-  lock_filesys_holder = NULL;
   lock_init (&glb_lock_swapsys);
 
   /* Set up a thread structure for the running thread. */

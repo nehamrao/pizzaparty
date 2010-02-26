@@ -82,7 +82,9 @@ bool swap_in (struct frame_struct *pframe)
   if (is_all_zero)
   {
     memset (kpage, 0, PGSIZE);
+    lock_acquire (&pframe->frame_lock);		//acquire frame lock
     sup_pt_set_swap_in (pframe, kpage);
+    lock_release (&pframe->frame_lock);		//release frame lock
     return true;
   } 
 
@@ -109,11 +111,12 @@ bool swap_in (struct frame_struct *pframe)
     return true;
   }
 
+  lock_acquire (&pframe->frame_lock);		//acquire frame lock
+  /* Update sup_pt entry information */
+  sup_pt_set_swap_in (pframe, kpage);
+
   if (device == fs_device)
-  {
     lock_acquire (&glb_lock_filesys);
-    lock_filesys_holder = thread_current ();
-  }
   else 
     lock_acquire (&glb_lock_swapsys);
 
@@ -125,10 +128,7 @@ bool swap_in (struct frame_struct *pframe)
   }
 
   if (device == fs_device)
-  {
-    lock_filesys_holder = NULL;
     lock_release (&glb_lock_filesys);
-  }
   else 
     lock_release (&glb_lock_swapsys);  
 
@@ -143,8 +143,7 @@ bool swap_in (struct frame_struct *pframe)
     bitmap_set_multiple (swap_free_map, sector_no, PGSIZE / BLOCK_SECTOR_SIZE, false);
     lock_release (&swap_set_lock);
    }
-  /* Update sup_pt entry information */
-  sup_pt_set_swap_in (pframe, kpage);
+  lock_release (&pframe->frame_lock);		//release frame lock
 
   return true;
 }
@@ -185,6 +184,8 @@ bool swap_out (struct frame_struct *pframe)
     sector_no = bitmap_scan_and_flip (swap_free_map, 0,
                                       PGSIZE / BLOCK_SECTOR_SIZE, false);
     lock_release (&swap_set_lock);
+
+    lock_acquire (&pframe->frame_lock);		//acquire frame lock
     sup_pt_set_swap_out (pframe, sector_no, false); 
     goto write;
   }
@@ -194,11 +195,13 @@ bool swap_out (struct frame_struct *pframe)
   {
     device = fs_device;
     sector_no = pframe->sector_no;    
+
+    lock_acquire (&pframe->frame_lock);		//acquire frame lock
     sup_pt_set_swap_out (pframe, pframe->sector_no, true); 
     if (dirty)
       goto write;
   }
-  /* */
+  /* For executable, if dirty, write to swap space, otherwise do nothing. */
   if (type == TYPE_Executable) 
   {
     if (dirty)
@@ -209,6 +212,7 @@ bool swap_out (struct frame_struct *pframe)
                                         PGSIZE / BLOCK_SECTOR_SIZE, false);
       lock_release (&swap_set_lock);
 
+      lock_acquire (&pframe->frame_lock);		//acquire frame lock
       sup_pt_set_swap_out (pframe, sector_no, false); 
       goto write;
     } else
@@ -220,34 +224,25 @@ bool swap_out (struct frame_struct *pframe)
   ASSERT ("Reach places which should never be reached"); 
 
 write:
-  /* Out of swap space */
-  if (sector_no == SECTOR_ERROR)
-    return false;
 
   /* Write to disk or swap device */
-  int i;
-
   if (device == fs_device)
-  {
     lock_acquire (&glb_lock_filesys);
-    lock_filesys_holder = thread_current ();
-  }
   else 
     lock_acquire (&glb_lock_swapsys);
 
+  int i;
   for (i = 0; i < PGSIZE / BLOCK_SECTOR_SIZE; i++)
   {
     block_write (device, sector_no + i, kpage + BLOCK_SECTOR_SIZE * i); 
   }
 
   if (device == fs_device)
-  {
-    lock_filesys_holder = NULL;
     lock_release (&glb_lock_filesys);
-  }
   else 
     lock_release (&glb_lock_swapsys);  
 
+  lock_release (&pframe->frame_lock);		//release frame lock
   return true;
 
 done:

@@ -67,7 +67,6 @@ struct pte_shared
   struct list_elem elem;
 };
 
-
 void
 sup_pt_init (void);
 
@@ -99,17 +98,8 @@ sup_pt_set_swap_out (struct frame_struct *, block_sector_t, bool);
 bool
 sup_pt_set_memory_map (uint32_t *, void *);
 
-void
-sup_pt_fs_set_dirty (struct frame_struct *, bool);
-
 bool
 sup_pt_fs_is_dirty  (struct frame_struct *);
-
-void
-sup_pt_fs_set_pte_list (struct frame_struct *, uint8_t *, bool);
-
-bool
-sup_pt_fs_scan_and_reset_access (struct frame_struct *);
 
 uint8_t *
 sup_pt_evict_frame (void);

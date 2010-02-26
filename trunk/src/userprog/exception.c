@@ -215,18 +215,21 @@ page_fault (struct intr_frame *f)
   ps = sup_pt_ps_lookup (pte);
 
   /* No entry in supplemental page table indicates a bad address */
-  if (ps == NULL) goto bad_page_fault;
-  
+  if (ps == NULL) goto bad_page_fault;  
+
+  lock_acquire (&ps->fs->frame_lock);
+  ps->fs->flag |= FS_PINNED;
+  lock_release (&ps->fs->frame_lock);
+
   /* Normal page_faults can come here */
   goto normal_page_fault;
 
 normal_page_fault:              /* Swap in the page */
 
   holding_filesys_lock = false;
-  if (lock_filesys_holder == t)
+  if (lock_held_by_current_thread (&glb_lock_filesys))
   {
     holding_filesys_lock = true;
-    lock_filesys_holder = NULL;
     lock_release (&glb_lock_filesys);
   }
   bool success = swap_in (ps->fs);
@@ -237,9 +240,10 @@ normal_page_fault:              /* Swap in the page */
   if (holding_filesys_lock)
   {
     lock_acquire (&glb_lock_filesys);
-    lock_filesys_holder = t;
   }
-
+  lock_acquire (&ps->fs->frame_lock);
+  ps->fs->flag &= ~FS_PINNED;
+  lock_release (&ps->fs->frame_lock);
   return;
 
 bad_page_fault:                 /* Terminate the process */
