@@ -10,6 +10,8 @@
 #include "threads/pte.h"
 #include "threads/init.h"
 
+#include <stdio.h>
+
 /* Supplemental Page Table is global. */
 struct hash sup_pt;
 struct lock sup_pt_lock;
@@ -150,7 +152,6 @@ sup_pt_add (uint32_t *pd, void *upage, uint8_t *vaddr, size_t length,
 
   return ps;
 }
-
 
 /* Delete an entry from sup_pt, given upage */
 bool
@@ -432,7 +433,7 @@ sup_pt_less_func (const struct hash_elem *a, const struct hash_elem *b,
   return psa->key < psb->key;
 }
 
-/* install_page without actually reading data from disk */
+/* Install_page without actually reading data from disk */
 bool
 mark_page (void *upage, uint8_t *addr,
            size_t length, uint32_t flag,
@@ -440,7 +441,7 @@ mark_page (void *upage, uint8_t *addr,
 {
   struct thread *t = thread_current ();
 
-  if (!(pagedir_get_page (t->pagedir, upage) == NULL))
+  if (pagedir_get_page (t->pagedir, upage) != NULL)
     return false;
 
   return sup_pt_add (t->pagedir, upage, addr, length, flag, sector_no)
@@ -520,13 +521,8 @@ frame_lookup_exec (block_sector_t sector_to_find, uint32_t flag)
        e = list_next (e))
     {
       fs = list_entry (e, struct frame_struct, elem);
-      if (fs->sector_no == sector_to_find)
-        {
-          int i = fs->flag & TYPEBITS;
-          int j = fs->flag & FS_READONLY;
-        }
       if ((fs->flag & TYPEBITS) == TYPE_Executable &&   /* Executable */
-          (fs->flag & FS_READONLY) != 0 &&              /* Read only */
+          (fs->flag & FS_READONLY) == 0 &&              /* Read only */
           fs->sector_no == sector_to_find)              /* Right sector # */
         {
           return fs;
@@ -534,6 +530,4 @@ frame_lookup_exec (block_sector_t sector_to_find, uint32_t flag)
     }
   return NULL;
 }
-
-
 
