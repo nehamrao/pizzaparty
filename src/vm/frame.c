@@ -30,7 +30,11 @@ sup_pt_hash_func (const struct hash_elem *element, void *aux UNUSED);
 static bool
 sup_pt_less_func (const struct hash_elem *a, const struct hash_elem *b,
                   void *aux UNUSED);
+static bool
+sup_pt_fs_scan_and_reset_access (struct frame_struct *);
 
+static void
+sup_pt_fs_set_pte_list (struct frame_struct *, uint8_t *, bool);
 
 /* Initialize supplemental page table and frame table */
 void 
@@ -263,14 +267,14 @@ sup_pt_delete (uint32_t *pte)
 void
 sup_pt_set_swap_in (struct frame_struct *fs, void *kpage)
 {
-  lock_acquire (&fs->frame_lock);
+//  lock_acquire (&fs->frame_lock);
 
   fs->vaddr = kpage;
   fs->flag = (fs->flag & POSMASK) | POS_MEM;
   sup_pt_fs_set_pte_list (fs, kpage, true);
   fs->flag &= ~FS_PINNED;
 
-  lock_release (&fs->frame_lock);
+//  lock_release (&fs->frame_lock);
 }
 
 /* Used when swapping out
@@ -280,14 +284,14 @@ sup_pt_set_swap_out (struct frame_struct *fs,
                      block_sector_t sector_no,
                      bool is_on_disk)
 {
-  lock_acquire (&fs->frame_lock);
+//  lock_acquire (&fs->frame_lock);
 
   fs->vaddr = NULL;
   fs->sector_no = sector_no;
   fs->flag = (fs->flag & POSMASK) | (is_on_disk ? POS_DISK : POS_SWAP);
   sup_pt_fs_set_pte_list (fs, NULL, false);
 
-  lock_release (&fs->frame_lock);
+//  lock_release (&fs->frame_lock);
 }
 
 /* Set up mapping from kpage to the frame associated with pte */
@@ -336,70 +340,6 @@ sup_pt_fs_is_dirty (struct frame_struct *fs)
   return false;
 }
 
-/* Set frame_struct and all linked ptes' dirty bits */
-void 
-sup_pt_fs_set_dirty (struct frame_struct *fs, bool dirty)
-{
-  lock_acquire (&fs->frame_lock);
-  /* Set frame_struct */
-  if (dirty)
-    fs->flag |= FS_DIRTY;
-  else 
-    fs->flag &= ~FS_DIRTY;
-
-  /* Set pte's */
-  struct list *list = &fs->pte_list;
-  struct list_elem *e;
-  for (e = list_begin (list); e != list_end (list); e = list_next (e))
-  {
-    struct pte_shared *pte_shared = list_entry (e, struct pte_shared, elem);
-    if (dirty)
-      *pte_shared->pte |= PTE_D;
-    else 
-      *pte_shared->pte &= ~PTE_D;
-  }
-  lock_release (&fs->frame_lock);
-
-  /* Flush TLB */
-  struct thread* t = thread_current ();
-  pagedir_activate (t->pagedir);
-}
-
-/* Find any accessed pte's associated with frame_struct
-   also reset the accessed bits for future use */
-bool 
-sup_pt_fs_scan_and_reset_access (struct frame_struct *fs)
-{
-  bool flag = false;
-  struct list_elem *e;
-
-  lock_acquire (&fs->frame_lock);
-  struct list *list = &fs->pte_list;
-  for (e = list_begin (list); e != list_end (list); e = list_next (e))
-  {
-    struct pte_shared *pte_shared = list_entry (e, struct pte_shared, elem);
-    if ((*pte_shared->pte & PTE_A) != 0)
-    {
-      flag = true;
-      *pte_shared->pte &= ~PTE_A;       /* Reset pte's */
-    }
-  }
-
-  /* Refer to sup_pt_delete() for synching access bit */
-  if (fs->flag & FS_ACCESS)
-  {
-    flag = true;
-    fs->flag &= ~FS_ACCESS;             /* Reset frame_struct */
-  }
-  lock_release (&fs->frame_lock);
-
-  /* Flush TLB */
-  struct thread* t = thread_current ();
-  pagedir_activate (t->pagedir);
-
-  return flag;
-}
-
 /* Evict a frame
    return the freed virtual address, which can be used by others */
 uint8_t *
@@ -431,11 +371,14 @@ sup_pt_evict_frame ()
       evict_pointer = list_entry (e, struct frame_struct, elem);
       lock_release (&frame_list_lock);
 
+      if (!lock_try_acquire (&evict_pointer->frame_lock))
+        continue;
+
       /* Query PINED bit */
       /* TODO ??? */
       if ((evict_pointer->flag & FS_PINNED) != 0)
       {
-//        printf ("PINNED\n");
+        lock_release (&evict_pointer->frame_lock);
         continue;
 //      } else {
 //        evict_pointer->flag |= FS_PINNED; 
@@ -444,7 +387,11 @@ sup_pt_evict_frame ()
       /* Frames in memory are candidates for eviction */
       if ((evict_pointer->flag & POSBITS) == POS_MEM)
         if (sup_pt_fs_scan_and_reset_access (evict_pointer))
+        {
+          lock_release (&evict_pointer->frame_lock);
           break;
+        }
+      lock_release (&evict_pointer->frame_lock);
 //      evict_pointer->flag &= ~FS_PINNED;
     } 
 
@@ -456,9 +403,44 @@ sup_pt_evict_frame ()
   return vaddr;
 }
 
+/* Find any accessed pte's associated with frame_struct
+   also reset the accessed bits for future use */
+static bool 
+sup_pt_fs_scan_and_reset_access (struct frame_struct *fs)	//***static
+{
+  bool flag = false;
+  struct list_elem *e;
+
+  struct list *list = &fs->pte_list;
+  for (e = list_begin (list); e != list_end (list); e = list_next (e))
+  {
+    struct pte_shared *pte_shared = list_entry (e, struct pte_shared, elem);
+    if ((*pte_shared->pte & PTE_A) != 0)
+    {
+      flag = true;
+      *pte_shared->pte &= ~PTE_A;       /* Reset pte's */
+    }
+  }
+
+  /* Refer to sup_pt_delete() for synching access bit */
+  if (fs->flag & FS_ACCESS)
+  {
+    flag = true;
+    fs->flag &= ~FS_ACCESS;             /* Reset frame_struct */
+  }
+
+  /* Flush TLB */
+  struct thread* t = thread_current ();
+  pagedir_activate (t->pagedir);
+
+  return flag;
+}
+
+
+
 /* Used when swapping in or out, determined by is_swapping_in,
    set relevant bits for all pte's sharing this particular frame_struct */
-void 
+static void 
 sup_pt_fs_set_pte_list (struct frame_struct *fs, uint8_t *kpage,
                         bool is_swapping_in)
 {
