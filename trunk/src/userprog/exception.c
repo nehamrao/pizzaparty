@@ -160,6 +160,12 @@ page_fault (struct intr_frame *f)
   /* Here the handler part begins */
   struct thread *t = thread_current ();
 
+  /* Kill when in kernel mode and not in syscall, a kernel fault */
+  if (!user && !t->is_in_syscall)
+    {
+      kill (f);
+    }
+
   bool holding_filesys_lock;
   holding_filesys_lock = false;
   if (lock_held_by_current_thread (&glb_lock_filesys))
