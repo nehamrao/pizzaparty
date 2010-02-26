@@ -11,9 +11,6 @@
 void exception_init (void);
 void exception_print_stats (void);
 
-#include "threads/interrupt.h"
-void page_fault (struct intr_frame *);
-
 #endif /* userprog/exception.h */
 
 

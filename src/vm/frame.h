@@ -74,9 +74,6 @@ struct page_struct *
 sup_pt_add (uint32_t *, void *, uint8_t *,
             size_t, uint32_t, block_sector_t);
 
-struct page_struct *
-sup_pt_shared_add (uint32_t *, void *, struct frame_struct *);
-
 bool
 sup_pt_find_and_delete (uint32_t *, void *);
 
@@ -106,5 +103,11 @@ sup_pt_evict_frame (void);
 
 bool
 mark_page (void *, uint8_t *, size_t, uint32_t, block_sector_t);
+
+bool
+mark_shared_page (void *, struct frame_struct *);
+
+struct frame_struct*
+frame_lookup_exec (block_sector_t, uint32_t);
 
 #endif /* vm/frame.h */

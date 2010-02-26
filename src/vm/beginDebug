@@ -1,8 +1,7 @@
 pintos-mkdisk filesys.dsk --filesys-size=2
 pintos-mkdisk swap.dsk --swap-size=4
 pintos -f -q
-make build/tests/vm/page-parallel.result
-pintos -p ./build/tests/vm/page-parallel -a page-parallel -p ./build/tests/vm/child-linear -a child-linear -- -q
-pintos -v --gdb -- run page-parallel
+pintos -p ./build/tests/userprog/multi-recurse -a multi-recurse -- -q
+pintos -v --gdb -- run 'multi-recurse 15'
 
 

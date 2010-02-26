@@ -151,40 +151,6 @@ sup_pt_add (uint32_t *pd, void *upage, uint8_t *vaddr, size_t length,
   return ps;
 }
 
-/* Create a sup_pt entry, but share with others for an exsiting frame */
-struct page_struct *
-sup_pt_shared_add (uint32_t *pd, void *upage, struct frame_struct *fs)
-{
-  /* Find pte */
-  uint32_t *pte = sup_pt_pte_lookup (pd, upage, true);
-
-  /* Create page_struct and register in sup_pt */
-  struct page_struct *ps;
-  ps = malloc (sizeof (struct page_struct));
-  if (ps == NULL)
-    return NULL;
-  ps->key = (uint32_t) pte;
-  ps->fs = fs;
-  
-  lock_acquire (&sup_pt_lock);
-  hash_insert (&sup_pt, &ps->elem);
-  lock_release (&sup_pt_lock);
-
-  lock_acquire (&ps->fs->frame_lock);
-  /* Register share memory in frame table */
-  struct pte_shared* pshr =
-    (struct pte_shared*)malloc (sizeof (struct pte_shared));
-  if (pshr == NULL)
-    {
-      free (ps);
-      return NULL;
-    }
-  pshr->pte = pte;
-  list_push_back (&ps->fs->pte_list, &pshr->elem);
-  lock_release (&ps->fs->frame_lock);
-
-  return ps;
-}
 
 /* Delete an entry from sup_pt, given upage */
 bool
@@ -210,7 +176,7 @@ sup_pt_delete (uint32_t *pte)
   bool pin = false; 
 
   lock_acquire (&ps->fs->frame_lock);  // frame lock acquire
-  if (ps->fs->flag & FS_PINNED == 0)
+  if ((ps->fs->flag & FS_PINNED) == 0)
   {
      pin = true;
      ps->fs->flag |= FS_PINNED;  /* Pin the frame, which is about to be deleted */
@@ -255,8 +221,6 @@ sup_pt_delete (uint32_t *pte)
       break;
     }
   }
-  if (pin)    /* Unpin the frame */
-    ps->fs->flag &= ~FS_PINNED;
   if  (ps != NULL)
     lock_release (&ps->fs->frame_lock);  //frame lock release
 
@@ -304,12 +268,9 @@ sup_pt_set_memory_map (uint32_t *pte, void *kpage)
 bool
 sup_pt_fs_is_dirty (struct frame_struct *fs)
 {
-//  lock_acquire (&fs->frame_lock);
-
   /* Frame struct is dirty */
   if (fs->flag & FS_DIRTY)
     {
-//      lock_release (&fs->frame_lock);
       return true;
     }
 
@@ -338,9 +299,9 @@ sup_pt_evict_frame ()
 {
   struct list *list = &frame_list;
   struct list_elem *e;
+  struct frame_struct *victim;
 
   /* Get evict_pointer, initialize if necessary */
-//  lock_acquire (&evict_lock);
   if (evict_pointer == NULL)
     {
       lock_acquire (&frame_list_lock);
@@ -362,7 +323,11 @@ sup_pt_evict_frame ()
       evict_pointer = list_entry (e, struct frame_struct, elem);
       lock_release (&frame_list_lock);
 
-      if (!lock_try_acquire (&evict_pointer->frame_lock))
+      victim = evict_pointer;
+      if (lock_held_by_current_thread (&victim->frame_lock))
+        continue;
+
+      if (!lock_try_acquire (&victim->frame_lock))
         continue;
 
       /* Query PINED bit */
@@ -376,11 +341,9 @@ sup_pt_evict_frame ()
       if ((evict_pointer->flag & POSBITS) == POS_MEM)
         if (sup_pt_fs_scan_and_reset_access (evict_pointer))
           break;
-      lock_release (&evict_pointer->frame_lock);
+      if (lock_held_by_current_thread (&victim->frame_lock))
+        lock_release (&victim->frame_lock);
     } 
-
-  struct frame_struct *victim = evict_pointer;
-//  lock_release (&evict_lock);  
 
   uint8_t *vaddr = victim->vaddr;
   swap_out (victim);
@@ -483,5 +446,94 @@ mark_page (void *upage, uint8_t *addr,
   return sup_pt_add (t->pagedir, upage, addr, length, flag, sector_no)
          != NULL;
 }
+
+/* Install_page, sharing with others for an exsiting frame */
+bool
+mark_shared_page (void *upage, struct frame_struct *fs)
+{
+  struct thread* t = thread_current ();
+
+  if (pagedir_get_page (t->pagedir, upage) != NULL)
+    return false;
+
+  uint32_t *pd = t->pagedir;
+
+  /* Find pte */
+  uint32_t *pte = sup_pt_pte_lookup (pd, upage, true);
+
+  /* Create page_struct and register in sup_pt */
+  struct page_struct *ps;
+  ps = malloc (sizeof (struct page_struct));
+  if (ps == NULL)
+    return false;
+
+  if ((fs->flag & POSBITS) == POS_MEM)
+  {
+     *pte =  pte_create_user (fs->vaddr, false);
+     *pte |= PTE_P;
+     *pte |= PTE_A; 
+     pagedir_activate (t->pagedir);
+  }
+
+  ps->key = (uint32_t) pte;
+  ps->fs = fs;
+  lock_acquire (&sup_pt_lock);
+  hash_insert (&sup_pt, &ps->elem);
+  lock_release (&sup_pt_lock);
+
+  
+  lock_init (&ps->fs->frame_lock);
+  lock_acquire (&ps->fs->frame_lock);
+  /* Register share memory in frame table */
+  struct pte_shared* pshr =
+    (struct pte_shared*)malloc (sizeof (struct pte_shared));
+  if (pshr == NULL)
+    {
+      free (ps);
+      return false;
+    }
+  pshr->pte = pte;
+  lock_release (&ps->fs->frame_lock);
+
+  lock_acquire (&frame_list_lock);
+
+  list_push_back (&ps->fs->pte_list, &pshr->elem);
+  lock_release (&frame_list_lock);
+
+  return true;
+}
+
+/* Lookup for an executable frame with given sector #
+   used for frame sharing */
+struct frame_struct*
+frame_lookup_exec (block_sector_t sector_to_find, uint32_t flag)
+{
+  if ((flag & TYPEBITS) != TYPE_Executable ||
+      (flag & FS_READONLY) == 0)
+    {
+      return NULL;
+    }
+
+  struct list_elem* e = NULL;
+  struct frame_struct* fs = NULL;
+  for (e = list_begin (&frame_list); e != list_end (&frame_list);
+       e = list_next (e))
+    {
+      fs = list_entry (e, struct frame_struct, elem);
+      if (fs->sector_no == sector_to_find)
+        {
+          int i = fs->flag & TYPEBITS;
+          int j = fs->flag & FS_READONLY;
+        }
+      if ((fs->flag & TYPEBITS) == TYPE_Executable &&   /* Executable */
+          (fs->flag & FS_READONLY) != 0 &&              /* Read only */
+          fs->sector_no == sector_to_find)              /* Right sector # */
+        {
+          return fs;
+        }
+    }
+  return NULL;
+}
+
 
 

@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include "frame.h"
 
-void swap_init (void);
+bool swap_init (void);
 bool swap_in (struct frame_struct *pframe);
 bool swap_out (struct frame_struct *pframe);
 void swap_free (uint32_t * pte);
