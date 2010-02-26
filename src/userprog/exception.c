@@ -130,8 +130,9 @@ page_fault (struct intr_frame *f)
   bool not_present;  /* True: not-present page, false: writing r/o page. */
   bool write;        /* True: access was write, false: access was read. */
   bool user;         /* True: access by user, false: access by kernel. */
-  bool holding_filesys_lock;
   void *fault_addr;  /* Fault address. */
+  bool success;
+  struct page_struct *ps = NULL;
 
   /* Obtain faulting address, the virtual address that was
      accessed to cause the fault.  It may point to code or to
@@ -157,22 +158,32 @@ page_fault (struct intr_frame *f)
   /* Here the handler part begins */
   struct thread *t = thread_current ();
 
+  bool holding_filesys_lock;
+  holding_filesys_lock = false;
+  if (lock_held_by_current_thread (&glb_lock_filesys))
+  {
+    holding_filesys_lock = true;
+    lock_release (&glb_lock_filesys);
+  }
+
   /* The address should not be present */
   if (!not_present) 
     goto bad_page_fault;
 
+//  printf ("tid = %ld, Fault_addr = %lx\n", t->tid, fault_addr);
+
+  /* Stack growth heuristic condition:
+        write to a non-present address and
+        fault_addr below previous stack_bound and
+        fault_addr above the lowest possible esp position */
+
   /* Get user_esp for possible stack growth */
-  struct page_struct *ps = NULL;
   void *user_esp;
   if (user)
     user_esp = f->esp;
   else 
     user_esp = t->user_esp;
 
-  /* Stack growth heuristic condition:
-        write to a non-present address and
-        fault_addr below previous stack_bound and
-        fault_addr above the lowest possible esp position */
   if (not_present && write &&
       fault_addr < t->stack_bound &&
       fault_addr >= user_esp - 32)
@@ -198,6 +209,7 @@ page_fault (struct intr_frame *f)
       
       /* Now grow the stack */
       t->stack_bound = pg_round_down (fault_addr);
+      lock_acquire (&ps->fs->frame_lock);
       goto normal_page_fault;
     }
 
@@ -215,38 +227,33 @@ page_fault (struct intr_frame *f)
   ps = sup_pt_ps_lookup (pte);
 
   /* No entry in supplemental page table indicates a bad address */
-  if (ps == NULL) goto bad_page_fault;  
+  if (ps == NULL) 
+    goto bad_page_fault;  
 
   lock_acquire (&ps->fs->frame_lock);
   ps->fs->flag |= FS_PINNED;
-  lock_release (&ps->fs->frame_lock);
 
   /* Normal page_faults can come here */
   goto normal_page_fault;
 
 normal_page_fault:              /* Swap in the page */
 
-  holding_filesys_lock = false;
-  if (lock_held_by_current_thread (&glb_lock_filesys))
-  {
-    holding_filesys_lock = true;
-    lock_release (&glb_lock_filesys);
-  }
-  bool success = swap_in (ps->fs);
+  success = swap_in (ps->fs);
   if (!success)
     goto bad_page_fault;
+
+  ps->fs->flag &= ~FS_PINNED;
+  lock_release (&ps->fs->frame_lock);
 
   /* If previously holding the filesys_lock, reacquire the lock */
   if (holding_filesys_lock)
   {
     lock_acquire (&glb_lock_filesys);
   }
-  lock_acquire (&ps->fs->frame_lock);
-  ps->fs->flag &= ~FS_PINNED;
-  lock_release (&ps->fs->frame_lock);
   return;
 
 bad_page_fault:                 /* Terminate the process */
+//  printf ("Bad page fault\n");
   thread_current ()->process_info->exit_status = -1;
   thread_exit ();
   return;
