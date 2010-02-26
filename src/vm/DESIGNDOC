@@ -1,7 +1,8 @@
-       	       	    +---------------------------+
-		    |		CS 140		|
+96e4c6
+                    +---------------------------+
+		    |		CS 140          |
 		    | PROJECT 3: VIRTUAL MEMORY	|
-		    |	   DESIGN DOCUMENT	|
+		    |	   DESIGN DOCUMENT      |
 		    +---------------------------+
 
 ---- GROUP ----
@@ -17,6 +18,30 @@ Yinfeng Qin     <yinfeng@stanford.edu>
 >> If you have any preliminary comments on your submission, notes for the
 >> TAs, or extra credit, please give them here.
 
+We implemented sharing when multiple processes load the same executable file.
+For each frame (managed by struct frame_struct as introduced later), we record
+the user pages (managed by struct page_struct as introduced later) that
+share this frame. We record the information in frame_struct about the
+type of data the frame is containing, the location on disk of the original 
+data, whether the data is read-only and so on. With these information, we
+can identify user pages requesting the frame page containing the same 
+executable file segments.
+
+Each time in load_segment(), we traverse the frame table to find the frame
+containing the same executable segments, and register this newly built
+page structure to the frame. So later when this page faults, there is no need
+to read from disk if the frame is already in memory, we can simply point to
+that frame.
+
+Sharing is made possible by our carefully designed frame table and page table
+structure. From the beginning, we bear sharing in mind, so there is a list
+in each frame structure recording all user pages pointing to this frame. Also,
+whenever the frame is swapped in or out, we would make further effort to 
+synchronize relevant information such as access/dirty bits in all relevant
+frame and pages. As a result, when we come to implement sharing, the only 
+extra effort needed is in identifying frames previously allocated that 
+contains exactly the same executable file contents we need.
+
 >> Please cite any offline or online sources you consulted while
 >> preparing your submission, other than the Pintos documentation, course
 >> text, lecture notes, and course staff.
@@ -30,11 +55,11 @@ Yinfeng Qin     <yinfeng@stanford.edu>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
----- ALGORITHMS ----
+/* Frame table */
+struct list frame_list;
 
->> A2: In a few paragraphs, describe your code for locating the frame,
->> if any, that contains the data of a given page.
-
+/* Frame structure tracking a frame of data
+   Unit structure making up the frame table*/
 struct frame_struct
 {
   uint32_t flag;                /* Flag bits */
@@ -45,38 +70,73 @@ struct frame_struct
                                    user pages sharing this frame */
   struct list_elem elem;
 };
-We implement locating the frame by constructing a frame struct unit corresponds
-to exactly one frame. The frame struct contains flag, which indicates whether 
-the frame is on disk or on swap or in memory. In the first two cases, the 
-sector_no  in frame struct is used to record the sector number on disk or on 
-swap. In the last case, vaddr in frame_struct is used to record the kernel 
-virtual address of the frame. Whenver a pte is given, it is first used as a key 
-for the supplementary page table to locate the page struct, in which stores the
-frame struct. Then, given the frame struct, the pte's corresponding frame could
-be retrieved through consulting vaddr or sector_no depending on flag in the 
-frame struct. 
 
+/* A unit structure representing page pte's
+   sharing a common frame.
+   Unit structure making up pte_list in frame strucutre */
+struct pte_shared
+{
+  uint32_t *pte;
+  struct list_elem elem;
+};
+
+/* Supplemental page table */
+struct hash sup_pt;
+
+/* A page structure corresponds to one user virtual page
+   Unit structure making up supplemental page table */
+struct page_struct
+{
+  uint32_t key;
+  struct frame_struct *fs;
+  struct hash_elem elem;
+};
+
+/* Swap device */
+struct block *sp_device;
+
+/* Swap table */
+static struct bitmap *swap_free_map;
+
+
+---- ALGORITHMS ----
+
+>> A2: In a few paragraphs, describe your code for locating the frame,
+>> if any, that contains the data of a given page.
+
+We locate the frame by constructing a frame struct unit corresponding
+to exactly one frame. The frame struct contains flag, which indicates whether
+the frame is on disk, swap, or in memory. In the first two cases, the 
+sector_no in frame struct is used to record the sector number on disk or 
+swap. In the last case, vaddr in frame_struct is used to record the kernel 
+virtual address of the frame.
+
+Whenever a pte is given, it is first used as a key for the supplementary 
+page table to locate the page struct, which in turn stores the frame struct.
+With the frame struct, we can locate the data for a given page using the
+sector_no if the flag indicates the page is on disk or swap, and using vaddr
+is the flag indicates the page is in memory.
 
 >> A3: How does your code coordinate accessed and dirty bits between
 >> kernel and user virtual addresses that alias a single frame, or
 >> alternatively how do you avoid the issue?
 
 Our design coordinate dirty bits between kernel and user virtual addresses that
-alias a single frame by check and update the dirty bits. For instance, any time
-(such as swap out, memory unmap or delete a pte from the frame's pte list)
-whether a frame is dirty required to be checked, the process will first check 
-if any of the user virtual address or the kernel virtual address points to the 
-frame has ever been set as dirty. If any of the dirty bit is true, the frame is 
-treated as dirty. 
-The accessed bit is coordinated in much the same as the dirty bits. The only
-difference is that in the case of eviction, all the ptes pointed to the same 
-frame's accessed bit is updated to zero if the evict_pointer circles to the 
-frame.
+alias to the same frame by checking and updating the dirty bits. For instance,
+any time (such as swap out, memory unmap or delete a pte from the frame's pte
+list) we want to check a frame's dirty bit, we will first check if any of the
+user virtual address or the kernel virtual address points to the frame has
+ever been set to dirty. If any of the dirty bit is true, the frame is treated
+as dirty. 
 
+The accessed bits are coordinated in much the same way as the dirty bits.
+The only difference is that in the case of eviction, the accessed bits of all
+the pte's sharing the same frame is updated to 0 if the evict_pointer
+cycles to the frame.
 
+Whenever we touches the actual pte in the page table, we would also flush TLB
+to avoid a wrong TLB entry.
 
-
-also mention Flush TLB here
 
 ---- SYNCHRONIZATION ----
 
@@ -88,6 +148,23 @@ also mention Flush TLB here
 >> A5: Why did you choose the data structure(s) that you did for
 >> representing virtual-to-physical mappings?
 
+Our major concern is the speed in querying information when conducting
+VM routines. As a result, we choose to use hash table to implement
+supplemental page table. Though the frame table is backed by a list, we do not
+sacrifice performance since most frame query is done from the supplemental
+page table entry, where a pointer is stored to directly reach this associated
+frame strucutre.
+
+A global frame table facilitates frame eviction algorithm. We implement the
+frame table by a list structure, which makes it efficient for both dynamic
+allocating and deleting, and circular traverse of the frame table.
+
+A bitmap is used to manage swap slots. The management of swap slots is straight
+forward since we know from the beginning the number of swap slots, and the swap
+table only serves to find an available slot. So we borrow the idea of palloc
+implementation of Pintos, and use bitmap to build the swap table.
+
+
 		       PAGING TO AND FROM DISK
 		       =======================
 
@@ -97,28 +174,57 @@ also mention Flush TLB here
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+struct thread
+  {
+    ...
+    void* user_esp;             /* User esp, saved before entering
+                                   kernel mode, used by page fault
+                                   handler in determining stack growth */
+    void* stack_bound;          /* Stack bound, pages above which have
+                                   previously been mapped, used to 
+                                   determine stack growth */
+    ...
+  };
+
+/* "Hand" in clock algorithm for frame eviction */
+struct frame_struct* evict_pointer;
+
+
 ---- ALGORITHMS ----
 
 >> B2: When a frame is required but none is free, some frame must be
 >> evicted.  Describe your code for choosing a frame to evict.
 
+In our design, the frame_struct is not conceptually the same as "frame" in
+physical memory discussed in our class. Here we use frame_struct to
+represent not only a kernel virtual page, be it in memory, on disk or swap.
+This way we have a unified interface to track the position of each given 
+page of data.
+
 Our design uses clock algorithm to choose a frame to evict. A pointer 
-evict_pointer is used to circle through the frame_list. When the pointer 
-circles to an on memory frame, we call function 
-sup_pt_fs_scan_and_reset_access() to examine whether the frame is suitable
-to be evicted and reset related information. In the scan and reset function,
-all of the accessed bits of the ptes pointing to the frame is checked. If 
-any of the accessed bits is not zero, the frame is treated as accessed and not
-evict for this round of eviction, but the accessed bits of the ptes pointing to 
-this frame are set as zero. If none of the accessed bits of the ptes pointing 
-to the frame is not zero, then the frame is chosen as the eviction victim in 
-this round.  
+evict_pointer is used to cycle through the frame table. When the pointer 
+circles to an frame in memory, we examine whether the frame is suitable
+to be evicted by calling the scan and reset function.
+
+In the scan and reset function, access bits of all the pages pointing to the
+frame is checked. If any of the access bits is 1, the frame is treated as 
+access recently and not to be evicted for this time, but the access bits of
+the pages pointing to this frame are reset to 0. If none of the access bits
+of the pages pointing to the frame is 1, then the frame is chosen to be the
+victim in this round of eviction.
 
 >> B3: When a process P obtains a frame that was previously used by a
 >> process Q, how do you adjust the page table (and any other data
 >> structures) to reflect the frame Q no longer has?
 
-
+By our design, the frame strucutre represents a given page of data, whether
+it is in memory, on disk or swap. For the example of this problem, when the
+actual frame is obtained by P, the swapping algorithm would update the record
+for the frame structure held by Q, indicating this page of data for Q is now
+on disk, swap, or simply non-existence if it is all-zero. Then P can safely
+use the physical frame previously used by Q. When Q gets back control and want
+to read the data, page fault handler would call swap_in to retrieve the page
+of data for Q.
 
 >> B4: Explain your heuristic for deciding whether a page fault for an
 >> invalid virtual address should cause the stack to be extended into
@@ -127,18 +233,22 @@ this round.
 To decide whether a page fault for an invalid virtual address should cause the
 stack to be extended, we provide the page fault handler with two information:
 the lower boundary of the stack named as stack_bound, and the stack pointer of
-the user process before the page fault happens. As we depend on page faults to 
-detect invalid memory access, we need to record the stack pointer if a page 
-fault occurs in the kernel, as the processor only saves the stack pointer 
-when an exception causes a switch from user to kernel mode, reading esp out of
-the struct intr_frame passed to page_fault() would yield an undefined value, 
-not the user stack pointer. We save esp into struct thread on the initial 
-transition from user to kernel. By doing so, we could record the user process's
-stack pointer before the page fault happens. As the fault address is invalid,
-it is expected to be lower than the stack_bound above which has already been
-allocated. In addition to that, the fault address is expected to be higher than
-the 32 bytes below the stack pointer, since the largest access below stack 
-pointer is PUSHA, pushing 32 bytes at once.  
+the user process before the page fault happens.
+
+Because we depend on page faults to detect invalid memory access, we need to
+record the stack pointer if a page fault occurs in the kernel, since the 
+processor only saves the stack pointer when an exception causes a switch from
+user to kernel mode, reading esp out of the struct intr_frame passed to 
+page_fault() would yield an undefined value.
+
+We save esp in thread structure on the initial transition from user to kernel
+mode. By doing so, we can record the user process's stack pointer before the
+page fault handler begins working. Since the faulting address is invalid,
+it is expected to be lower than the stack_bound. In addition, the faulting
+address is expected to be higher than the 32 bytes below the stack pointer,
+since the largest access below stack pointer is PUSHA, resulting in a decrese
+of stack pointer by 32 bytes.  
+
 
 ---- SYNCHRONIZATION ----
 
@@ -181,28 +291,67 @@ pointer is PUSHA, pushing 32 bytes at once.
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+/* Memory mapped file mapping information
+   from mapid to file and address */
+struct mmap_struct
+  {
+    int mapid;                  /* Mapped file id */
+    struct file* p_file;        /* File struct from file_reopen() */
+    void* vaddr;                /* Begin of vaddr for mmaped file */
+    struct list_elem elem;
+  };
+
+struct thread
+  {
+    ...
+    struct list mmap_list;      /* List of mmaped files */
+    int next_mapid;             /* Next available mmaped file id */
+    ...
+  };
+
+
 ---- ALGORITHMS ----
 
 >> C2: Describe how memory mapped files integrate into your virtual
 >> memory subsystem.  Explain how the page fault and eviction
 >> processes differ between swap pages and other pages.
 
+Viewed abstractly, memory mapped files is just a special case of VM subsystem
+where the file system disk serves as the swap device. There is not much 
+difference other than that. As a result, we try to treat it the same in page
+fault handler, and maximize the code shared by memory mapped file and demand-
+paged executables.
 
+In page fault handler, we make no special effort to serve memory mapped files.
+The information needed are all recorded in our frame_struct, and we dispatch
+to swap-in, swap-out and eviction code to deal with it.
+
+When swapping in, we choose the block device to read according to the type
+of data recorded in frame_struct. For memory mapped file the block device 
+should be file system disk, while that for other pages are swap device. There
+is no distinction other than that. So later we just read with given device
+and sector number to fill the data in memory.
+
+Similar logic holds when doing swap out. The only difference is still the
+block device to write to. Other than that, we can use the same code to get
+memory address and sector number, and conduct the swapping process.
+
+With this design, we made no distinction in the eviction process. When 
+evicting a frame, we just query the accessed bits to choose a frame to evict,
+and the frames for memory mapped files is the same to others here.
 
 >> C3: Explain how you determine whether a new file mapping overlaps
 >> any existing segment.
 
 To determine whether a new file mapping overlaps with any of the 
-existing segment, we looked up all the pages in the span of the file
+existing segments, we looked up all the pages in the span of the file
 size started from the virtual address provided by the user, to see if
-any of the virtual address ever been allocated a frame_struct by 
-invoking function sup_pt_pte_lookup (). This is necessary for that along 
-with the introduction of functions like swap and memory map, the 
-validation of user virtual address could no longer be solely looking up
-if the pte is null. Looking up whether a pte has corresponding entry
-in supplementary page table would become handy in the situation. 
-If there is a supplementary page table entry for the virtual address, the
-overlap occurrs. The memory map is then terminated by returning false.  
+any of the virtual address has been allocated a frame_struct by 
+invoking function sup_pt_pte_lookup (). Determining whether a pte has 
+corresponding entry in supplementary page table would become handy in this 
+situation. If there is a supplementary page table entry for the virtual 
+address, we know overlap occurs. The memory map syscall is then terminated 
+by returning MAP_FAILED.
 
 ---- RATIONALE ----
 
@@ -212,14 +361,15 @@ overlap occurrs. The memory map is then terminated by returning false.
 >> that much of their implementation can be shared.  Explain why your
 >> implementation either does or does not share much of the code for
 >> the two situations.
-In our design, we implement the swap and mmap by sharing much of the same code.
-In doing so, we take full advantage of the 
-The only difference between swap and mmap file is that, while the mmap requires
-the file to be written back to original file, the swap is swapped back to swap
-space. While using the same sector number variable to record the corresponding 
-position either in swap space or disk, we use the flag to indicate which device
-to write on.  
- 
+
+In our design, we implement the swap and mmap by sharing all the code 
+conducting the actually IO operations. To do so, we take advantage of the 
+observation that the only difference between memory mapped file and demand-
+paged executable file is that, while the mmap requires the file to be written
+back to the original file on file system disk, the page-demanded executables
+can be swapped back to swap space. At the same time, a single sector number 
+variable recording the position either in swap space or disk is enough.
+
 
 			   SURVEY QUESTIONS
 			   ================
@@ -235,6 +385,10 @@ the quarter.
 
 >> Did you find that working on a particular part of the assignment gave
 >> you greater insight into some aspect of OS design?
+
+In trying to merge the operations for memory mapped files and demand-paged
+executables, we really learn a lot about the details of the filesys 
+implementation on Pintos.
 
 >> Is there some particular fact or hint we should give students in
 >> future quarters to help them solve the problems?  Conversely, did you

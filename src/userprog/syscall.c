@@ -34,8 +34,6 @@ static int _write (int fd, const void *buffer, unsigned size);
 static void _seek (int fd, unsigned position);
 static unsigned _tell (int fd);
 static void _close (int fd);
-static mapid_t _mmap (int fd, void *addr);
-static void _munmap (mapid_t mapping);
 /*** static methods providing utility functions to above methods */
 
 /* determine a valid virtual address given from user */
