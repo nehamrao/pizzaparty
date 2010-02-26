@@ -143,6 +143,10 @@ to avoid a wrong TLB entry.
 >> A4: When two user processes both need a new frame at the same time,
 >> how are races avoided?
 
+We use proper synchronization to ensure that two user processes get frame atomicly. Each frame in memory or on disk has a lock in its struct, so when user process requests a frame in memoery, it acquires the frame lock, which ensures that the two user program will not get the same page. Moreover, we also use device lock, i.e. file system lock and swap space lock to lock the reading from block, which ensures the two users program not loading data from the same device simultaneously. 
+
+Note that our method not only prevent race condition that two user processes access the same resources, but also preserves the parallelism. For example, on user process swapping in a page from disk and another process swapping page from swap disk can operate simultaneously. We ensure each critical step, e.g. getting a page from eviction algorithm, loading page from device, is executed atomically.
+
 ---- RATIONALE ----
 
 >> A5: Why did you choose the data structure(s) that you did for
@@ -258,15 +262,38 @@ of stack pointer by 32 bytes.
 >> textbook for an explanation of the necessary conditions for
 >> deadlock.)
 
+We use various locks from synchronization design. The locks are classified into 3 categories, data structure locks, device locks and table locks. 
+
+Firstly, we implement list lock for frame list, hash lock for supplemental page table, and bitmap lock for swap disk free map. This ensures that the operations on those data structures will not be interleaved by other process. And the require lock and release lock operation are added directly above and below the instruction on those data structure. Therefore, we ensure that we will never request a lock while holding a data structure lock. In other words, the data structure locks are lowest in "priority", i.e. those held at last. 
+
+Secondly, we implement device lock for device operation, i.e. file system lock and swap system lock. These locks are used to ensure that the loading data between memory and devices are not interleaved by other process. We add filesys lock for every filesys syscalls which access file system memory, and also for swap in and out between memory and disk when page fault occurs. We ensure that we will never request a lock while holding a device lock. This is true for most cases. The only exception is that when page fault occurs in a syscall, where we acquire the filesys device lock first. So in the page fault handler, we use lock_held_by_current_thread () function to check whether the filesys lock is held, and if so, we release it. This will cause no harm because the data transfer between disk and memory has not yet started. And after swapping in the page, and at the very end of the page fault handler, we check if we have released the filesys, and if so, we re-acquire it. So it appears to the user program as nothing happends, while at the same time ensures that we never request a lock while holding a device lock. 
+
+Thirdly, we implement table lock to synchronize the frame. Supplemental page table is local respect to process, so we don't need to synchronize it. But frame is accessed by shared process and by the fact that the eviction algorithm may choose any user frame, so we add a lock in frame structure. Note that here we avoid the global lock to allow parallelism. When a frame structure content is accessed or modified, we add a lock require and release above and below it. And in eviction algorithm, when we "consider" a frame to be victim, we try_acquire the frame lock. If not successful, we go to the next candidate, otherwise, we perform our algorithm as to whether choose this candidate or not. If not, we release the frame lock, otherwise, we release the frame lock after the frame is swapped out. For the page fault handler, as soon as we get the frame infomation related to the fault address, we acquire its frame lock, and release it after the page is loaded from the memory. 
+
+We ensure that we never "get stuck" in a lock while holding a user frame lock. Actually, the only way we can hold multiple user frame locks is through acquiring a lock in page fault handler and another in eviction algorithm considering candidates. So we use lock_try_acquire instread of lock_acquire in eviction algorithm, and if failed, we ignore current candidates to avoid deadlock. 
+
+In this way, we can avoid deadlock. The necessary condition of deadlock is a lock loop. Here for device and data structure locks, we ensure we never acquire any other locks, so they cannot be in a lock loop; for frame lock, we avoid such loop by lock_try_acquire. 
+
+
 >> B6: A page fault in process P can cause another process Q's frame
 >> to be evicted.  How do you ensure that Q cannot access or modify
 >> the page during the eviction process?  How do you avoid a race
 >> between P evicting Q's frame and Q faulting the page back in?
 
+In eviction algorithm, we acquire the frame lock of the candidate we are considering, and if we finally choose it, we will hold it till the data is written to disk or swap space and according frame table set. On the other hand, we protect the access and modification of the frame table by individual frame locks too. So process Q will wait in the frame lock until P finishes the eviction process. 
+
+To avoid race between P evicting Q's frame and Q faulting the page back in, in swap_in function, we ensure that the frame and page table are set AFTER the data is actually written to the swap space. So such Q faulting on the page only occurs when the data is completely on the disk or swap space. Q has to wait in the frame lock in page fault handler till P finishes evictin gthe frame. Then Q can safely swap in the page in need without causing problems. 
+
+
 >> B7: Suppose a page fault in process P causes a page to be read from
 >> the file system or swap.  How do you ensure that a second process Q
 >> cannot interfere by e.g. attempting to evict the frame while it is
 >> still being read in?
+
+Similar as the second question in B6, we makes sure that in swap_in operation, the loading data from the disk or swap space to the memory occurs before setting the page-table and frame-table. So this frame can only be considered a candidate for eviction after setting the page table and frame table, i.e. the flag is set such indicating the frame is actually in the memory, so this implies the data is already fully loaded in the memory. So this is fine. 
+
+Also we ensure that the frame cannot be evicted if just read in memory. In eviction, Q needs to acqire the frame lock to consider the candidate. If page fault is in process, Q will wait till P completes, so Q will not racing to access the ACCESS bit in the frame before P sets it to 1. This ensures fairness. 
+
 
 >> B8: Explain how you handle access to paged-out pages that occur
 >> during system calls.  Do you use page faults to bring in pages (as
@@ -274,7 +301,15 @@ of stack pointer by 32 bytes.
 >> into physical memory, or do you use some other design?  How do you
 >> gracefully handle attempted accesses to invalid virtual addresses?
 
+We bring in the page from the disk or swap space by page faults. We do not use "locking" to allow more flexibility of paging. 
+
+When a syscall accesses memory on user's behalf, it only checks whether the page is below the PHYS_BASE, so for unmapped memory access, a page fault may occur. Such page faults are similar to those caused by users except that the error_code indicates that the error is from the kernel. In order to differentiate the on-user-behalf kernel page fault from real kernel page fault which indicating a kernel bug, we use a flag in struct thread to indicate whether the page fault is from a syscall or not. In entering syscalls, we set the flag to be true, and in exiting syscalls, we set it to be false. And when we enter the page fault handler, if the error code indicates it is from kernel, then we check the flag, if true, then we deal the page fault in a normal way as in user mode, otherwise, we panic the kernel as before. If the syscall page faults on an invalid virtual address, we identify it as that in user mode. 
+
+In user mode, we identify the invalid address in the following way. First, we check whether it is above PHYS_BASE, which is done in syscall. Secondly, we check whether there is record on the supplemental page table, if not found, we identify it as invalid address, if not identified as valid stack growth.
+
+
 ---- RATIONALE ----
+
 
 >> B9: A single lock for the whole VM system would make
 >> synchronization easy, but limit parallelism.  On the other hand,
@@ -282,6 +317,19 @@ of stack pointer by 32 bytes.
 >> possibility for deadlock but allows for high parallelism.  Explain
 >> where your design falls along this continuum and why you chose to
 >> design it this way.
+
+We place great value on parallelism, so we don't use a global lock for everything. For example, we use individual frame lock for each frame, which enables other processes to process other rames while current process is doing I/O, because current process is only holding the lock for this particular frame. 
+
+In choosing the design, we first classify the locks into three categories, the data structure locks, device locks and table locks. There is little problem in implementing the first two kinds of locks, except we deal with the special case about the holding filesys lock in page fault handler. These will not cause any deadlock situation. For frame locks, this kind of design is kind of complicate and error-prone, we avoid this by carefully examing the temporal relationship of the function called. For example, the path of race condition that is likely to occur is as follows:
+
+page fault handler -> swap in (eviction algorithm -> swap_out -> data write & set table) -> load data & set table value) 
+
+so we use frame lock to lock those in parethesis, and frame lock to lock the whole process.
+
+
+
+
+
 
 			 MEMORY MAPPED FILES
 			 ===================
