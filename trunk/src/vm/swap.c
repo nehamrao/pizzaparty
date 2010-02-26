@@ -49,17 +49,14 @@ void swap_free (uint32_t * pte)
 
 }
 
-/* TODO need better comment swap in */
+/* Swap in a page on disk or on swap space, or initilize a zero page*/
 bool swap_in (struct frame_struct *pframe)
 {
   struct block *device;
   size_t length = pframe->length;
   block_sector_t sector_no = pframe->sector_no;
-  if (sector_no == SECTOR_ERROR)
-  {
-     /* Sector number invalid */
-     return false;
-  }
+  uint32_t pos = pframe->flag & POSBITS;
+  uint32_t is_all_zero = pframe->flag & FS_ZERO;
 
   /* Get a frame, from memory or by evict another frame */
   uint8_t *kpage = palloc_get_page (PAL_USER | PAL_ZERO);
@@ -74,17 +71,12 @@ bool swap_in (struct frame_struct *pframe)
       return false;
     }
   }
-  
-  uint32_t pos = pframe->flag & POSBITS;
-  uint32_t is_all_zero = pframe->flag & FS_ZERO;
    
   /* If zero page, just write a page of 0's */
   if (is_all_zero)
   {
     memset (kpage, 0, PGSIZE);
-    lock_acquire (&pframe->frame_lock);		//acquire frame lock
     sup_pt_set_swap_in (pframe, kpage);
-    lock_release (&pframe->frame_lock);		//release frame lock
     return true;
   } 
 
@@ -110,10 +102,6 @@ bool swap_in (struct frame_struct *pframe)
     /* Already in memeory, other processes race to swap_in the frame */
     return true;
   }
-
-  lock_acquire (&pframe->frame_lock);		//acquire frame lock
-  /* Update sup_pt entry information */
-  sup_pt_set_swap_in (pframe, kpage);
 
   if (device == fs_device)
     lock_acquire (&glb_lock_filesys);
@@ -143,7 +131,9 @@ bool swap_in (struct frame_struct *pframe)
     bitmap_set_multiple (swap_free_map, sector_no, PGSIZE / BLOCK_SECTOR_SIZE, false);
     lock_release (&swap_set_lock);
    }
-  lock_release (&pframe->frame_lock);		//release frame lock
+
+  /* Update sup_pt entry information */
+  sup_pt_set_swap_in (pframe, kpage);
 
   return true;
 }
@@ -153,24 +143,23 @@ bool swap_out (struct frame_struct *pframe)
 {  
   struct block *device = NULL;
   block_sector_t sector_no = 0;
+
   uint8_t *kpage = pframe->vaddr;
   if (kpage == NULL)
   {
     /* Virtual address invalid */
     return false;
   }  
-
+  uint32_t pos = POS_MEM;
   uint32_t type = pframe->flag & TYPEBITS;
   uint32_t dirty = sup_pt_fs_is_dirty (pframe);
   uint32_t is_all_zero = pframe->flag & FS_ZERO;
-
-  ASSERT ((pframe->flag & POSBITS) == POS_MEM);
 
   /* Zero and not dirty page need not swap out */
   if (is_all_zero && !dirty)
   {
     pframe->flag = (pframe->flag & POSMASK) | POS_DISK;
-    goto done;
+    return true;
   }
   else 
   {
@@ -185,21 +174,25 @@ bool swap_out (struct frame_struct *pframe)
                                       PGSIZE / BLOCK_SECTOR_SIZE, false);
     lock_release (&swap_set_lock);
 
-    lock_acquire (&pframe->frame_lock);		//acquire frame lock
-    sup_pt_set_swap_out (pframe, sector_no, false); 
+    pos = POS_SWAP;
     goto write;
   }
     
   /* Write memory mapped file to disk */
   if (type == TYPE_MMFile)
   {
-    device = fs_device;
-    sector_no = pframe->sector_no;    
-
-    lock_acquire (&pframe->frame_lock);		//acquire frame lock
-    sup_pt_set_swap_out (pframe, pframe->sector_no, true); 
     if (dirty)
+    {
+      device = fs_device;
+      sector_no = pframe->sector_no;
+      pos = POS_DISK;
       goto write;
+    } else 
+    {
+      sup_pt_set_swap_out (pframe, pframe->sector_no, true); 
+      lock_release (&pframe->frame_lock);
+      return true;
+    }
   }
   /* For executable, if dirty, write to swap space, otherwise do nothing. */
   if (type == TYPE_Executable) 
@@ -211,14 +204,12 @@ bool swap_out (struct frame_struct *pframe)
       sector_no = bitmap_scan_and_flip (swap_free_map, 0,
                                         PGSIZE / BLOCK_SECTOR_SIZE, false);
       lock_release (&swap_set_lock);
-
-      lock_acquire (&pframe->frame_lock);		//acquire frame lock
-      sup_pt_set_swap_out (pframe, sector_no, false); 
       goto write;
     } else
     {
       sup_pt_set_swap_out (pframe, pframe->sector_no, true); 
-      goto done;
+      lock_release (&pframe->frame_lock);   
+      return true;
     }
   }
   ASSERT ("Reach places which should never be reached"); 
@@ -242,10 +233,8 @@ write:
   else 
     lock_release (&glb_lock_swapsys);  
 
+  sup_pt_set_swap_out (pframe, sector_no, (pos == POS_DISK));
   lock_release (&pframe->frame_lock);		//release frame lock
-  return true;
-
-done:
   return true;
 }
 

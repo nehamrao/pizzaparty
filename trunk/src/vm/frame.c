@@ -267,14 +267,10 @@ sup_pt_delete (uint32_t *pte)
 void
 sup_pt_set_swap_in (struct frame_struct *fs, void *kpage)
 {
-//  lock_acquire (&fs->frame_lock);
-
   fs->vaddr = kpage;
   fs->flag = (fs->flag & POSMASK) | POS_MEM;
   sup_pt_fs_set_pte_list (fs, kpage, true);
   fs->flag &= ~FS_PINNED;
-
-//  lock_release (&fs->frame_lock);
 }
 
 /* Used when swapping out
@@ -284,14 +280,11 @@ sup_pt_set_swap_out (struct frame_struct *fs,
                      block_sector_t sector_no,
                      bool is_on_disk)
 {
-//  lock_acquire (&fs->frame_lock);
-
   fs->vaddr = NULL;
   fs->sector_no = sector_no;
   fs->flag = (fs->flag & POSMASK) | (is_on_disk ? POS_DISK : POS_SWAP);
   sup_pt_fs_set_pte_list (fs, NULL, false);
 
-//  lock_release (&fs->frame_lock);
 }
 
 /* Set up mapping from kpage to the frame associated with pte */
@@ -311,12 +304,12 @@ sup_pt_set_memory_map (uint32_t *pte, void *kpage)
 bool
 sup_pt_fs_is_dirty (struct frame_struct *fs)
 {
-  lock_acquire (&fs->frame_lock);
+//  lock_acquire (&fs->frame_lock);
 
   /* Frame struct is dirty */
   if (fs->flag & FS_DIRTY)
     {
-      lock_release (&fs->frame_lock);
+//      lock_release (&fs->frame_lock);
       return true;
     }
 
@@ -332,11 +325,9 @@ sup_pt_fs_is_dirty (struct frame_struct *fs)
         /* Set frame_struct flag is enough for future query */
         /* Refer to sup_pt_delete() for synching dirty bit */
         fs->flag |= FS_DIRTY;
-        lock_release (&fs->frame_lock);
         return true;
       }
   }
-  lock_release (&fs->frame_lock);
   return false;
 }
 
@@ -349,7 +340,7 @@ sup_pt_evict_frame ()
   struct list_elem *e;
 
   /* Get evict_pointer, initialize if necessary */
-  lock_acquire (&evict_lock);
+//  lock_acquire (&evict_lock);
   if (evict_pointer == NULL)
     {
       lock_acquire (&frame_list_lock);
@@ -375,28 +366,21 @@ sup_pt_evict_frame ()
         continue;
 
       /* Query PINED bit */
-      /* TODO ??? */
       if ((evict_pointer->flag & FS_PINNED) != 0)
       {
         lock_release (&evict_pointer->frame_lock);
         continue;
-//      } else {
-//        evict_pointer->flag |= FS_PINNED; 
       }
 
       /* Frames in memory are candidates for eviction */
       if ((evict_pointer->flag & POSBITS) == POS_MEM)
         if (sup_pt_fs_scan_and_reset_access (evict_pointer))
-        {
-          lock_release (&evict_pointer->frame_lock);
           break;
-        }
       lock_release (&evict_pointer->frame_lock);
-//      evict_pointer->flag &= ~FS_PINNED;
     } 
 
   struct frame_struct *victim = evict_pointer;
-  lock_release (&evict_lock);  
+//  lock_release (&evict_lock);  
 
   uint8_t *vaddr = victim->vaddr;
   swap_out (victim);
