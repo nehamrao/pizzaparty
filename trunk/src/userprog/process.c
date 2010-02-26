@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <syscall.h>
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
@@ -21,7 +22,6 @@
 #include "threads/pte.h"
 #include "threads/malloc.h"
 #include "vm/frame.h"
-#include "userprog/syscall.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -153,7 +153,7 @@ process_exit (void)
   {
     for (i = 0; i < map_number; i++)
     {
-      _munmap (i);
+      munmap (i);
     }
   }
 
@@ -501,8 +501,20 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       block_sector_t sector_idx =
         byte_to_sector (file_get_inode (file), ofs);
 
-      if (!mark_page (upage, NULL, page_read_bytes, flag, sector_idx))
-        return false;
+      /* For sharing: traverse frame table, find an executable frame
+         containing this sector block data */
+      struct frame_struct* fs_prev = frame_lookup_exec (sector_idx, flag);
+      if (fs_prev != NULL)	/* Found the same exec page */
+        {
+          if (!mark_shared_page (upage, fs_prev))
+            return false;
+        }
+      else			/* Not found, mark a new page */ 
+        {
+          if (!mark_page (upage, NULL, page_read_bytes, flag, sector_idx))
+            return false;
+        }
+
 
       /* Advance. */
       read_bytes -= page_read_bytes;

@@ -20,9 +20,7 @@
 
 static void syscall_handler (struct intr_frame *);
 
-/**
- * static methods providing service to lib/user/syscall.h
- */
+/*** static methods providing service to lib/user/syscall.h */
 static void _halt (void);
 static void _exit (int status);
 static pid_t _exec (const char *cmd_line);
@@ -36,15 +34,9 @@ static int _write (int fd, const void *buffer, unsigned size);
 static void _seek (int fd, unsigned position);
 static unsigned _tell (int fd);
 static void _close (int fd);
-/* yinfeng ******************************************************************/
-//static mapid_t _mmap (int fd, void *addr);
-//static void _munmap (mapid_t mapping);
-/* yinfeng ******************************************************************/
-
-
-/**
- * static methods providing utility functions to above methods
- */
+static mapid_t _mmap (int fd, void *addr);
+static void _munmap (mapid_t mapping);
+/*** static methods providing utility functions to above methods */
 
 /* determine a valid virtual address given from user */
 static bool checkvaddr(const void * vaddr, unsigned size);

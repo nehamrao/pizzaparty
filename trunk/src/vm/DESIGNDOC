@@ -35,9 +35,46 @@ Yinfeng Qin     <yinfeng@stanford.edu>
 >> A2: In a few paragraphs, describe your code for locating the frame,
 >> if any, that contains the data of a given page.
 
+struct frame_struct
+{
+  uint32_t flag;                /* Flag bits */
+  uint8_t *vaddr;               /* Virtual address if on memeory */
+  size_t length;                /* Length of meaningful contents */
+  block_sector_t sector_no;     /* Sector # if on disk or swap */
+  struct list pte_list;         /* A list of pte's representing
+                                   user pages sharing this frame */
+  struct list_elem elem;
+};
+We implement locating the frame by constructing a frame struct unit corresponds
+to exactly one frame. The frame struct contains flag, which indicates whether 
+the frame is on disk or on swap or in memory. In the first two cases, the 
+sector_no  in frame struct is used to record the sector number on disk or on 
+swap. In the last case, vaddr in frame_struct is used to record the kernel 
+virtual address of the frame. Whenver a pte is given, it is first used as a key 
+for the supplementary page table to locate the page struct, in which stores the
+frame struct. Then, given the frame struct, the pte's corresponding frame could
+be retrieved through consulting vaddr or sector_no depending on flag in the 
+frame struct. 
+
+
 >> A3: How does your code coordinate accessed and dirty bits between
 >> kernel and user virtual addresses that alias a single frame, or
 >> alternatively how do you avoid the issue?
+
+Our design coordinate dirty bits between kernel and user virtual addresses that
+alias a single frame by check and update the dirty bits. For instance, any time
+(such as swap out, memory unmap or delete a pte from the frame's pte list)
+whether a frame is dirty required to be checked, the process will first check 
+if any of the user virtual address or the kernel virtual address points to the 
+frame has ever been set as dirty. If any of the dirty bit is true, the frame is 
+treated as dirty. 
+The accessed bit is coordinated in much the same as the dirty bits. The only
+difference is that in the case of eviction, all the ptes pointed to the same 
+frame's accessed bit is updated to zero if the evict_pointer circles to the 
+frame.
+
+
+
 
 also mention Flush TLB here
 
@@ -65,13 +102,43 @@ also mention Flush TLB here
 >> B2: When a frame is required but none is free, some frame must be
 >> evicted.  Describe your code for choosing a frame to evict.
 
+Our design uses clock algorithm to choose a frame to evict. A pointer 
+evict_pointer is used to circle through the frame_list. When the pointer 
+circles to an on memory frame, we call function 
+sup_pt_fs_scan_and_reset_access() to examine whether the frame is suitable
+to be evicted and reset related information. In the scan and reset function,
+all of the accessed bits of the ptes pointing to the frame is checked. If 
+any of the accessed bits is not zero, the frame is treated as accessed and not
+evict for this round of eviction, but the accessed bits of the ptes pointing to 
+this frame are set as zero. If none of the accessed bits of the ptes pointing 
+to the frame is not zero, then the frame is chosen as the eviction victim in 
+this round.  
+
 >> B3: When a process P obtains a frame that was previously used by a
 >> process Q, how do you adjust the page table (and any other data
 >> structures) to reflect the frame Q no longer has?
 
+
+
 >> B4: Explain your heuristic for deciding whether a page fault for an
 >> invalid virtual address should cause the stack to be extended into
 >> the page that faulted.
+
+To decide whether a page fault for an invalid virtual address should cause the
+stack to be extended, we provide the page fault handler with two information:
+the lower boundary of the stack named as stack_bound, and the stack pointer of
+the user process before the page fault happens. As we depend on page faults to 
+detect invalid memory access, we need to record the stack pointer if a page 
+fault occurs in the kernel, as the processor only saves the stack pointer 
+when an exception causes a switch from user to kernel mode, reading esp out of
+the struct intr_frame passed to page_fault() would yield an undefined value, 
+not the user stack pointer. We save esp into struct thread on the initial 
+transition from user to kernel. By doing so, we could record the user process's
+stack pointer before the page fault happens. As the fault address is invalid,
+it is expected to be lower than the stack_bound above which has already been
+allocated. In addition to that, the fault address is expected to be higher than
+the 32 bytes below the stack pointer, since the largest access below stack 
+pointer is PUSHA, pushing 32 bytes at once.  
 
 ---- SYNCHRONIZATION ----
 
@@ -120,8 +187,22 @@ also mention Flush TLB here
 >> memory subsystem.  Explain how the page fault and eviction
 >> processes differ between swap pages and other pages.
 
+
+
 >> C3: Explain how you determine whether a new file mapping overlaps
 >> any existing segment.
+
+To determine whether a new file mapping overlaps with any of the 
+existing segment, we looked up all the pages in the span of the file
+size started from the virtual address provided by the user, to see if
+any of the virtual address ever been allocated a frame_struct by 
+invoking function sup_pt_pte_lookup (). This is necessary for that along 
+with the introduction of functions like swap and memory map, the 
+validation of user virtual address could no longer be solely looking up
+if the pte is null. Looking up whether a pte has corresponding entry
+in supplementary page table would become handy in the situation. 
+If there is a supplementary page table entry for the virtual address, the
+overlap occurrs. The memory map is then terminated by returning false.  
 
 ---- RATIONALE ----
 
@@ -131,6 +212,14 @@ also mention Flush TLB here
 >> that much of their implementation can be shared.  Explain why your
 >> implementation either does or does not share much of the code for
 >> the two situations.
+In our design, we implement the swap and mmap by sharing much of the same code.
+In doing so, we take full advantage of the 
+The only difference between swap and mmap file is that, while the mmap requires
+the file to be written back to original file, the swap is swapped back to swap
+space. While using the same sector number variable to record the corresponding 
+position either in swap space or disk, we use the flag to indicate which device
+to write on.  
+ 
 
 			   SURVEY QUESTIONS
 			   ================

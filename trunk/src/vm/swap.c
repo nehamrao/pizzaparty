@@ -14,39 +14,37 @@
 #include "filesys/free-map.h"
 #include "userprog/pagedir.h"
 
-
+/* Point to device swap */
 struct block *sp_device;
 static struct bitmap *swap_free_map;
 struct lock swap_set_lock;
 
 /* Initialize swap device and swap table */
-void swap_init ()
-{
-  /*swap device pointer */
+bool swap_init ()
+{  
   sp_device = block_get_role (BLOCK_SWAP);
   lock_init (&swap_set_lock);
   /* Bitmap for swap */
   swap_free_map = bitmap_create (block_size (sp_device));
   if (swap_free_map == NULL)
   {
-     PANIC ("Out of kernel memory pool\n");
+     return false;
   }
+  return true;
 }
 
 void swap_free (uint32_t * pte)
 {
    
-   struct page_struct * ps = sup_pt_ps_lookup (pte);
-
-   
+   struct page_struct * ps = sup_pt_ps_lookup (pte);   
    if (ps != NULL && (ps->fs->flag&POSBITS) == POS_SWAP )
    {  
       lock_acquire (&swap_set_lock);
-      bitmap_set_multiple (swap_free_map, ps->fs->sector_no, PGSIZE / BLOCK_SECTOR_SIZE, false);
+      bitmap_set_multiple (swap_free_map, ps->fs->sector_no, 
+ 			PGSIZE / BLOCK_SECTOR_SIZE, false);
       lock_release (&swap_set_lock);
    }
    return;
-
 }
 
 /* Swap in a page on disk or on swap space, or initilize a zero page*/
@@ -67,7 +65,6 @@ bool swap_in (struct frame_struct *pframe)
     kpage = sup_pt_evict_frame ();
     if (kpage == NULL)
     {
-      PANIC ("Out of swap space!\n");
       return false;
     }
   }
@@ -85,7 +82,6 @@ bool swap_in (struct frame_struct *pframe)
   {
     /* Register filesys as block device */
     device = fs_device;
-
     /* Whether a newly loaded exec file page
        or a swapped out mem-mapped file page
        they are not dirty */
@@ -100,7 +96,8 @@ bool swap_in (struct frame_struct *pframe)
   else
   {
     /* Already in memeory, other processes race to swap_in the frame */
-    return true;
+    palloc_free_page (kpage);
+    return false;
   }
 
   if (device == fs_device)
@@ -128,13 +125,13 @@ bool swap_in (struct frame_struct *pframe)
   if (device == sp_device)
    {
     lock_acquire (&swap_set_lock);
-    bitmap_set_multiple (swap_free_map, sector_no, PGSIZE / BLOCK_SECTOR_SIZE, false);
+    bitmap_set_multiple (swap_free_map, sector_no,
+			   PGSIZE / BLOCK_SECTOR_SIZE, false);
     lock_release (&swap_set_lock);
    }
 
   /* Update sup_pt entry information */
   sup_pt_set_swap_in (pframe, kpage);
-
   return true;
 }
 
@@ -173,7 +170,6 @@ bool swap_out (struct frame_struct *pframe)
     sector_no = bitmap_scan_and_flip (swap_free_map, 0,
                                       PGSIZE / BLOCK_SECTOR_SIZE, false);
     lock_release (&swap_set_lock);
-
     pos = POS_SWAP;
     goto write;
   }
@@ -194,6 +190,7 @@ bool swap_out (struct frame_struct *pframe)
       return true;
     }
   }
+
   /* For executable, if dirty, write to swap space, otherwise do nothing. */
   if (type == TYPE_Executable) 
   {
@@ -212,7 +209,6 @@ bool swap_out (struct frame_struct *pframe)
       return true;
     }
   }
-  ASSERT ("Reach places which should never be reached"); 
 
 write:
 
@@ -234,7 +230,7 @@ write:
     lock_release (&glb_lock_swapsys);  
 
   sup_pt_set_swap_out (pframe, sector_no, (pos == POS_DISK));
-  lock_release (&pframe->frame_lock);		//release frame lock
+  lock_release (&pframe->frame_lock);	
   return true;
 }
 

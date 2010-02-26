@@ -148,7 +148,7 @@ struct process_info
   };
 
 /* Memory mapped file mapping information 
-   from mapid to file and address o*/
+   from mapid to file and address */
 struct mmap_struct
   {
     int mapid;                          /* mmaped file id */
