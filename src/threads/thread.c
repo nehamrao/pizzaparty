@@ -495,6 +495,9 @@ init_thread (struct thread *t, const char *name,
   /* Initialize children process list */
   list_init (&t->child_list);
   t->executable = NULL;
+
+  /* Initially not in syscall */
+  t->is_in_syscall = false;
 }
 
 /* Initialize metadata of current process */ 

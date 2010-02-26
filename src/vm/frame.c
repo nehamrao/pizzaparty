@@ -522,7 +522,7 @@ frame_lookup_exec (block_sector_t sector_to_find, uint32_t flag)
     {
       fs = list_entry (e, struct frame_struct, elem);
       if ((fs->flag & TYPEBITS) == TYPE_Executable &&   /* Executable */
-          (fs->flag & FS_READONLY) == 0 &&              /* Read only */
+          (fs->flag & FS_READONLY) != 0 &&              /* Read only */
           fs->sector_no == sector_to_find)              /* Right sector # */
         {
           return fs;

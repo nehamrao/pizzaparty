@@ -114,6 +114,9 @@ struct thread
     void * user_esp;                    /* user esp */
     void * stack_bound; 	        /* Stack bound */
 
+    /* Is in syscall */
+    bool is_in_syscall;
+
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };

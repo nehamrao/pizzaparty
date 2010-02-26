@@ -69,7 +69,9 @@ syscall_handler (struct intr_frame *f)
   /* Get syscall number */
   int syscall_no = (int)(read_stack (f, 0));
   
-  thread_current ()->user_esp = f->esp;
+  struct thread* t = thread_current ();
+  t->user_esp = f->esp;
+  t->is_in_syscall = true;
 
   /* Dispatch to individual calls */
   uint32_t arg1, arg2, arg3;
@@ -160,6 +162,8 @@ syscall_handler (struct intr_frame *f)
         kill_process ();    
         break;
     }
+
+  t->is_in_syscall = true;
 }
 
 static void
