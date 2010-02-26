@@ -183,6 +183,7 @@ struct thread
     void* stack_bound;          /* Stack bound, pages above which have
                                    previously been mapped, used to 
                                    determine stack growth */
+    bool is_in_syscall;         /* Determining if thread is in syscall */
     ...
   };
 
