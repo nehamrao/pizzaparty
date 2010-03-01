@@ -1,3 +1,4 @@
 make build/tests/userprog/no-vm/multi-oom.result
 pintos -p ./build/tests/userprog/no-vm/multi-oom -a multi-oom -- -q
 pintos -v --gdb -- run multi-oom
+#echo
