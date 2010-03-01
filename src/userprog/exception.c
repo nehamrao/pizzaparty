@@ -1,23 +1,15 @@
+#include "userprog/exception.h"
 #include <inttypes.h>
 #include <stdio.h>
-#include "userprog/exception.h"
 #include "userprog/gdt.h"
-#include "userprog/pagedir.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
-#include "threads/vaddr.h"
-#include "threads/pte.h"
-#include "threads/malloc.h"
-#include "vm/frame.h"
-#include "vm/swap.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
 
 static void kill (struct intr_frame *);
-
-static void page_fault (struct intr_frame *f);
-
+static void page_fault (struct intr_frame *);
 
 /* Registers handlers for interrupts that can be caused by user
    programs.
@@ -94,9 +86,11 @@ kill (struct intr_frame *f)
     case SEL_UCSEG:
       /* User's code segment, so it's a user exception, as we
          expected.  Kill the user process.  */
+      thread_current ()->process_info->exit_status = -1; /*******************************/ 
       printf ("%s: dying due to interrupt %#04x (%s).\n",
               thread_name (), f->vec_no, intr_name (f->vec_no));
       intr_dump_frame (f);
+      thread_exit ();
 
     case SEL_KCSEG:
       /* Kernel's code segment, which indicates a kernel bug.
@@ -133,8 +127,6 @@ page_fault (struct intr_frame *f)
   bool write;        /* True: access was write, false: access was read. */
   bool user;         /* True: access by user, false: access by kernel. */
   void *fault_addr;  /* Fault address. */
-  bool success;
-  struct page_struct *ps = NULL;
 
   /* Obtain faulting address, the virtual address that was
      accessed to cause the fault.  It may point to code or to
@@ -157,112 +149,20 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-  /* Here the handler part begins */
-  struct thread *t = thread_current ();
-
-  /* Kill when in kernel mode and not in syscall, a kernel fault */
-  if (!user && !t->is_in_syscall)
-    {
-      kill (f);
-    }
-
-  bool holding_filesys_lock;
-  holding_filesys_lock = false;
-  if (lock_held_by_current_thread (&glb_lock_filesys))
+  if (user) 
   {
-    holding_filesys_lock = true;
-    lock_release (&glb_lock_filesys);
+    kill (f);
+    return;
   }
 
-  /* The address should not be present */
-  if (!not_present) 
-    goto bad_page_fault;
-
-//  printf ("tid = %ld, Fault_addr = %lx\n", t->tid, fault_addr);
-
-  /* Stack growth heuristic condition:
-        write to a non-present address and
-        fault_addr below previous stack_bound and
-        fault_addr above the lowest possible esp position */
-
-  /* Get user_esp for possible stack growth */
-  void *user_esp;
-  if (user)
-    user_esp = f->esp;
-  else 
-    user_esp = t->user_esp;
-
-  if (not_present && write &&
-      fault_addr < t->stack_bound &&
-      fault_addr >= user_esp - 32)
-    {
-      /* If user stack growth exceeds certain limit, terminate the process */
-      if (pg_round_down (fault_addr) + USER_STACK_LIMIT < PHYS_BASE)
-        {
-          goto bad_page_fault;
-        }
-  
-      /* Add sup_pt entries necessary for this newly added stack page
-         fill in the gap from stack_bound all the way down
-         to the page containing fault_addr */
-      uint32_t flag = POS_SWAP | TYPE_Stack | FS_ZERO;
-      void *upage = t->stack_bound - PGSIZE;
-      while (upage >= pg_round_down (fault_addr))
-        {
-          ps = sup_pt_add (t->pagedir, upage, NULL, PGSIZE, flag, 0);
-          if (ps == NULL)
-            goto bad_page_fault;
-          upage -= PGSIZE;
-        }
-      
-      /* Now grow the stack */
-      t->stack_bound = pg_round_down (fault_addr);
-      lock_acquire (&ps->fs->frame_lock);
-      goto normal_page_fault;
-    }
-
-  /* Get page directory entry */
-  uint32_t *pd = t->pagedir;
-  uint32_t *pde = pd + pd_no (fault_addr);
-  if (*pde == 0)
-    {
-      goto bad_page_fault;
-    }
-
-  /* Get supplementale page table entry */
-  uint32_t *pt = pde_get_pt (*pde);
-  uint32_t *pte = pt + pt_no (fault_addr);
-  ps = sup_pt_ps_lookup (pte);
-
-  /* No entry in supplemental page table indicates a bad address */
-  if (ps == NULL) 
-    goto bad_page_fault;  
-
-  lock_acquire (&ps->fs->frame_lock);
-  ps->fs->flag |= FS_PINNED;
-
-  /* Normal page_faults can come here */
-  goto normal_page_fault;
-
-normal_page_fault:              /* Swap in the page */
-
-  success = swap_in (ps->fs);
-  if (!success)
-    goto bad_page_fault;
-
-  ps->fs->flag &= ~FS_PINNED;
-  lock_release (&ps->fs->frame_lock);
-
-  /* If previously holding the filesys_lock, reacquire the lock */
-  if (holding_filesys_lock)
-  {
-    lock_acquire (&glb_lock_filesys);
-  }
-  return;
-
-bad_page_fault:                 /* Terminate the process */
-  thread_current ()->process_info->exit_status = -1;
-  thread_exit ();
-  return;
+  /* To implement virtual memory, delete the rest of the function
+     body, and replace it with code that brings in the page to
+     which fault_addr refers. */
+  printf ("Page fault at %p: %s error %s page in %s context.\n",
+          fault_addr,
+          not_present ? "not present" : "rights violation",
+          write ? "writing" : "reading",
+          user ? "user" : "kernel");
+  kill (f);
 }
 

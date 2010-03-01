@@ -101,36 +101,23 @@ struct thread
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
     struct file_info *array_files[128]; /* Array of open files */
-    struct file *executable;		/* Current process's executable*/
-    struct list child_list;		/* Thread's children */
+    struct file *executable;		/* Record current process's executable*/
+    struct list child_list;		/* Record thread's children */
     struct process_info *process_info;  /* Process metadata */
 #endif
-
-    /* For memory mapped files */
-    struct list mmap_list;              /* List of mmaped files */
-    int next_mapid;                     /* Next available mmaped file id */
-
-    /* For stack growth */
-    void * user_esp;                    /* user esp */
-    void * stack_bound; 	        /* Stack bound */
-
-    /* Is in syscall */
-    bool is_in_syscall;
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
 
-/* Structure to record opened file information */
+/* structure to record relevant file information */
 struct file_info
   {
-    unsigned pos;                       /* Position within file */
-    struct file* p_file;                /* Pointer to actual file structure */
+    unsigned pos;                       /* position within file */
+    struct file* p_file;                /* pointer to actual file structure */
   };
-
-/* Global lock on file system and swap system */
+/* global lock on function call to filesys.h and file.h */
 struct lock glb_lock_filesys;
-struct lock glb_lock_swapsys;
 
 /* Metadata for process, which could be retrieved by parent process even
    after the process exits. */
@@ -142,22 +129,12 @@ struct process_info
     struct semaphore sema_wait;		/* Sema to ensure wait order */
     bool already_waited;		/* Whether the process has already been 
 					   waited by its parent */
-    bool parent_alive;			/* Whether parent process is alive*/
-    bool is_alive;			/* Whether process is alive */
+    bool parent_alive;			/* Whether the parent process is alive*/
+    bool is_alive;			/* Whether the process is alive */
     int exit_status;			/* Record exit status */
     int pid;				/* Record the pid */
     struct list_elem elem;		/* Element in child_list of its parent 
 					   thread */
-  };
-
-/* Memory mapped file mapping information 
-   from mapid to file and address */
-struct mmap_struct
-  {
-    int mapid;                          /* mmaped file id */
-    struct file* p_file;                /* file struct from file_reopen() */
-    void* vaddr;                        /* begin of vaddr for mmaped file */
-    struct list_elem elem;
   };
 
 /* If false (default), use round-robin scheduler.

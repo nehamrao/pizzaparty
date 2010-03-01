@@ -2,25 +2,20 @@
 #include <stdio.h>
 #include <string.h>
 #include <syscall-nr.h>
-#include <round.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/malloc.h"
-#include "threads/palloc.h"
 #include "threads/vaddr.h"
-#include "threads/pte.h"
 #include "devices/shutdown.h"
 #include "devices/input.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
-#include "filesys/inode.h"
 #include "userprog/process.h"
 #include "userprog/pagedir.h"
-#include "vm/frame.h"
 
 static void syscall_handler (struct intr_frame *);
 
-/*** static methods providing service to lib/user/syscall.h */
+/* static methods providing service to lib/user/syscall.h */
 static void _halt (void);
 static void _exit (int status);
 static pid_t _exec (const char *cmd_line);
@@ -34,13 +29,10 @@ static int _write (int fd, const void *buffer, unsigned size);
 static void _seek (int fd, unsigned position);
 static unsigned _tell (int fd);
 static void _close (int fd);
-/*** static methods providing utility functions to above methods */
-
-/* determine a valid virtual address given from user */
 static bool checkvaddr(const void * vaddr, unsigned size);
-
-/* determine if a valid user file descriptor */
 static bool is_user_fd (int fd);
+
+/* static methods providing utility functions to above methods */
 
 /* read arguments previously pushed on top of user stack, note this is 
    just a read with give offset, and stack pointer is not changed */
@@ -53,9 +45,6 @@ static int add_file (struct thread* t, struct file_info* f_info);
 /* Kill a process and exit with status -1 */
 static void kill_process (void);
 
-/* allocate a new mmap file id */
-static mapid_t allocate_mapid (void);
-
 
 void
 syscall_init (void) 
@@ -63,15 +52,11 @@ syscall_init (void)
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
-void
+static void
 syscall_handler (struct intr_frame *f) 
 {
   /* Get syscall number */
   int syscall_no = (int)(read_stack (f, 0));
-  
-  struct thread* t = thread_current ();
-  t->user_esp = f->esp;
-  t->is_in_syscall = true;
 
   /* Dispatch to individual calls */
   uint32_t arg1, arg2, arg3;
@@ -147,23 +132,10 @@ syscall_handler (struct intr_frame *f)
         _close ((int)arg1);
         break;
 
-      case SYS_MMAP:
-        arg1 = read_stack (f, 4);
-        arg2 = read_stack (f, 8);
-        f->eax = (uint32_t)_mmap ((int)arg1, (void*)arg2);
-        break;
-
-      case SYS_MUNMAP:
-        arg1 = read_stack (f, 4);
-        _munmap ((mapid_t)arg1);
-        break;
-
       default:
         kill_process ();    
         break;
     }
-
-  t->is_in_syscall = true;
 }
 
 static void
@@ -334,7 +306,6 @@ _read (int fd, void *buffer, unsigned size)
       /* protected filesys operation:
          read and record length of read */
       lock_acquire (&glb_lock_filesys);
-
       result = file_read_at (pf, buffer, size, file_offset);
 
       /* increment position within file for current thread */
@@ -373,12 +344,10 @@ _write (int fd, const void *buffer, unsigned size)
       /* Protect filesys operation:
          write and record length of read */
       lock_acquire (&glb_lock_filesys);
-
       result = file_write_at (pf, buffer, size, file_offset);
 
       /* Increment position within file for current thread */
       t->array_files[fd]->pos += result;
-
       lock_release (&glb_lock_filesys);
     }
 
@@ -435,158 +404,9 @@ _close (int fd)
 
   free (t->array_files[fd]);
   t->array_files[fd] = NULL;
+
   file_close (p_file);
-
   lock_release (&glb_lock_filesys);
-}
-
-mapid_t
-_mmap (int fd, void *addr)
-{
-  struct thread* t = thread_current ();
-
-  /* All the fail input conditions */
-  if (!is_user_vaddr (addr) ||          /* not valid user addr */
-      pg_ofs (addr) != 0 ||             /* not page aligned */
-      addr == 0 ||                      /* at virtual address 0 */
-      fd == STDIN_FILENO ||             /* stdin */
-      fd == STDOUT_FILENO ||            /* stdout */
-      _filesize (fd) == 0)              /* length file 0 */
-    {
-      /* Fail operation */
-      return MAP_FAILED;
-    }
-
-  /* Also fail if overlap occurs */
-  void *add = NULL;
-  int f_size = _filesize (fd);
-  for (add = addr; add < addr + f_size; add += PGSIZE)
-    {
-      /* The existence of both pte and ps indicates an already used page */
-      uint32_t *pte = sup_pt_pte_lookup (t->pagedir, add, false);
-      if (pte != NULL)
-        {
-          if (sup_pt_ps_lookup (pte) != NULL)
-            {
-              /* Fail operation */
-              return MAP_FAILED;
-            }
-        }
-    }
-  
-  /* Allocate mapid */
-  mapid_t mapid = allocate_mapid ();
-  struct mmap_struct* ms =
-    (struct mmap_struct*)malloc (sizeof (struct mmap_struct));
-  if (ms == NULL)
-    {
-      /* Fail operation */
-      return MAP_FAILED;
-    }
-  ms->mapid = mapid;
-  ms->vaddr = addr;
-
-  /* Reopen to get an independent reference to the file */
-  lock_acquire (&glb_lock_filesys);
-
-  struct file* new_file_ref = file_reopen (t->array_files[fd]->p_file);
-
-  lock_release (&glb_lock_filesys);
-  if (new_file_ref == NULL)
-    {
-      /* Fail operation */
-      free (ms);
-      return MAP_FAILED;
-    }
-  ms->p_file = new_file_ref;
-
-  /* Record in mmap_list */
-  list_push_back (&t->mmap_list, &ms->elem);
-
-  /* Begin mapping, creating sup_pt entries */
-  uint32_t read_bytes = f_size;
-  uint32_t zero_bytes = ROUND_UP (read_bytes, PGSIZE) - read_bytes;
-  void* upage = addr;
-  block_sector_t sector_idx = byte_to_sector (file_get_inode (ms->p_file), 0);
-  while (read_bytes > 0 || zero_bytes > 0)
-    {
-      /* Calculate how to fill this page */
-      size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
-      size_t page_zero_bytes = PGSIZE - page_read_bytes;
-
-      /* Add sup_pt entry */
-      uint32_t flag =
-        (page_read_bytes > 0 ? 0 : FS_ZERO) | POS_DISK | TYPE_MMFile;
-      mark_page (upage, NULL, page_read_bytes, flag, sector_idx);
-
-      /* Advance */
-      read_bytes -= page_read_bytes;
-      zero_bytes -= page_zero_bytes;
-      upage += PGSIZE;
-      sector_idx += PGSIZE / BLOCK_SECTOR_SIZE;
-    }
-
-  return mapid;
-}
-
-void
-_munmap (mapid_t mapping)
-{
-  struct thread* t = thread_current ();
-  struct list_elem* e = NULL;
-  struct list_elem* next_elem = NULL;
-  uint32_t f_size = 0;
-
-  /* Traverse list to find the mapping record */
-  for (e = list_begin (&t->mmap_list); e != list_end (&t->mmap_list);
-       e = next_elem)
-    {
-      struct mmap_struct* ms = list_entry (e, struct mmap_struct, elem);
-      if (ms->mapid == mapping)
-        {
-          /* Release pages, write back to disk in the process */
-          f_size = file_length (ms->p_file);
-          uint32_t write_bytes = f_size;
-          void* upage = ms->vaddr;
-          while (write_bytes > 0)
-            {
-              /* Calculate how to fill this page */
-              size_t page_write_bytes =
-                write_bytes < PGSIZE ? write_bytes : PGSIZE;
-
-              /* Write back to disk if page is dirty */
-              uint32_t* pte = sup_pt_pte_lookup (t->pagedir, upage, false);
-              struct page_struct* ps = sup_pt_ps_lookup (pte);
-              if (sup_pt_fs_is_dirty (ps->fs))
-                {
-                  file_write_at (ms->p_file, upage, write_bytes,
-                                 upage - ms->vaddr);
-                }
-
-              /* Delete pte and release frame */
-              uint32_t tmp_pte_content = *pte;
-              if (sup_pt_delete (pte))
-                {
-                  if ((tmp_pte_content & PTE_P) != 0)
-                    palloc_free_page (pte_get_page (tmp_pte_content));
-                }
-
-              /* Advance  */
-              write_bytes -= page_write_bytes;
-              upage += PGSIZE;
-            }
-
-          /* Remove this mapping record */
-          file_close (ms->p_file);
-          list_remove (e);
-          free (ms);
-          break;
-        }
-      else
-        {
-          next_elem = list_next (e);
-        }
-    }
 }
 
 
@@ -609,7 +429,6 @@ kill_process ()
   _exit (-1);
 }
 
-/* Add a file to the open file arrays for a process */
 static int
 add_file (struct thread* t, struct file_info* f_info)
 {
@@ -633,10 +452,22 @@ add_file (struct thread* t, struct file_info* f_info)
 static bool
 checkvaddr(const void * vaddr, unsigned size)
 {
+  uint32_t *pcheck;
+
+  struct thread *t = thread_current ();
+
   /* If the address exceeds PHYS_BASE, exit -1 */
   if (!is_user_vaddr (vaddr + size)) 
     return false;
 
+  /* Check if every page is mapped */
+  for (pcheck = pg_round_down (vaddr); 
+       pcheck <= pg_round_down (vaddr + size);)
+    {
+      if (!pagedir_get_page (t->pagedir, pcheck))
+        return false;
+      pcheck += PGSIZE;      
+    } 
   return true;
 }
 
@@ -649,15 +480,4 @@ is_user_fd (int fd)
    return ((fd >= 2) && (fd < 128) && (t->array_files[fd] != NULL));
 }
 
-/* allocate a new mmap file id */
-static mapid_t
-allocate_mapid (void)
-{
-  struct thread *t = thread_current ();
-
-  mapid_t result = t->next_mapid;
-  t->next_mapid++;
-
-  return result;
-}
 

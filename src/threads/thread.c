@@ -1,9 +1,9 @@
+#include "threads/thread.h"
 #include <debug.h>
 #include <stddef.h>
 #include <random.h>
 #include <stdio.h>
 #include <string.h>
-#include "threads/thread.h"
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
@@ -61,11 +61,11 @@ static unsigned thread_ticks;   /* # of timer ticks since last yield. */
 bool thread_mlfqs;
 
 static void kernel_thread (thread_func *, void *aux);
+
 static void idle (void *aux UNUSED);
 static struct thread *running_thread (void);
 static struct thread *next_thread_to_run (void);
-static void init_thread (struct thread *, const char *name,
-                         int priority, bool is_kernel);
+static void init_thread (struct thread *, const char *name, int priority, bool is_kernel);
 static bool is_thread (struct thread *) UNUSED;
 static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
@@ -95,7 +95,6 @@ thread_init (void)
   list_init (&ready_list);
   list_init (&all_list);
   lock_init (&glb_lock_filesys);
-  lock_init (&glb_lock_swapsys);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -466,8 +465,7 @@ is_thread (struct thread *t)
 /* Does basic initialization of T as a blocked thread named
    NAME. */
 static void
-init_thread (struct thread *t, const char *name,
-             int priority, bool is_kernel)
+init_thread (struct thread *t, const char *name, int priority, bool is_kernel)
 {
   ASSERT (t != NULL);
   ASSERT (PRI_MIN <= priority && priority <= PRI_MAX);
@@ -488,16 +486,8 @@ init_thread (struct thread *t, const char *name,
   /* Initialize file arrays */
   memset (t->array_files, 0, sizeof *(t->array_files));
 
-  /* Initialize mmap file list */
-  t->next_mapid = 0;
-  list_init (&t->mmap_list);
-
-  /* Initialize children process list */
   list_init (&t->child_list);
   t->executable = NULL;
-
-  /* Initially not in syscall */
-  t->is_in_syscall = false;
 }
 
 /* Initialize metadata of current process */ 

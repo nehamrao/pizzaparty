@@ -1,7 +1,0 @@
-pintos-mkdisk filesys.dsk --filesys-size=2
-pintos-mkdisk swap.dsk --swap-size=4
-pintos -f -q
-pintos -p ./build/tests/userprog/multi-recurse -a multi-recurse -- -q
-pintos -v --gdb -- run 'multi-recurse 15'
-
-

@@ -8,10 +8,8 @@
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
-#include "userprog/syscall.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
-#include "filesys/inode.h"
 #include "filesys/filesys.h"
 #include "threads/flags.h"
 #include "threads/init.h"
@@ -21,7 +19,6 @@
 #include "threads/vaddr.h"
 #include "threads/pte.h"
 #include "threads/malloc.h"
-#include "vm/frame.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -120,9 +117,8 @@ process_wait (int child_pid)
   struct process_info *child_info;
 
   /* Scan the child_list, and look for the one that matches tid */
-  for (elem = list_begin (&cur->child_list);
-       elem != list_end (&cur->child_list);
-       elem = list_next (elem))
+  for (elem = list_begin (&cur->child_list); elem != list_end (&cur->child_list);
+    elem = list_next (elem))
     {  
       child_info = list_entry (elem, struct process_info, elem);
       if (child_info->pid == child_pid)
@@ -130,7 +126,7 @@ process_wait (int child_pid)
         if (child_info->already_waited)      /* If already waited, exit */
           return -1;
         child_info->already_waited = true;	
-        if (!child_info->is_alive)           /* If not alive, return status */
+        if (!child_info->is_alive)	     /* If not alive, return status */
           return child_info->exit_status;
         else
           sema_down (&child_info->sema_wait);/* Down the wait sema */
@@ -145,35 +141,34 @@ void
 process_exit (void)
 {
   struct thread *cur = thread_current ();
+  uint32_t *pd;
   
-  /* Clean up mmap file list */
-  int i, map_number;
-  map_number = cur->next_mapid;
-  if (map_number != 0)
-  {
-    for (i = 0; i < map_number; i++)
-    {
-      _munmap (i);
-    }
-  }
-
-  /* Close all files and free their resources */
   int fd;
   for (fd = 2;fd < 128; fd ++)
   {
       if (cur->array_files[fd] != NULL)
         {
+          /* Close all files and free their resources */
           file_close (cur->array_files[fd]->p_file);
           free (cur->array_files[fd]);
         }    
   }
-
   /* Close executable and enable write */
   file_close (cur->executable);
 
+  /* If not kernel thread, print the exit message, update process metadata 
+     and free resources */
+  if (!(cur->is_kernel))
+  {
+    printf ("%s: exit(%d)\n", thread_name(), cur->process_info->exit_status);
+    cur->process_info->is_alive = false;
+    sema_up (&cur->process_info->sema_wait);
+    free_process_info ();
+  }
+
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
-  uint32_t *pd = cur->pagedir;
+  pd = cur->pagedir;
   if (pd != NULL) 
     {
       /* Correct ordering here is crucial.  We must set
@@ -187,19 +182,10 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
-
-  /* If not kernel thread, print the exit message, update process metadata 
-     and free resources */
-  if (!(cur->is_kernel))
-  {
-    printf ("%s: exit(%d)\n", thread_name(), cur->process_info->exit_status);
-    cur->process_info->is_alive = false;
-    sema_up (&cur->process_info->sema_wait);
-    free_process_info ();
-  }
 }
 
-/* Sets up the CPU for running user code in the current thread.
+/* Sets up the CPU for running user code in the current
+   thread.
    This function is called on every context switch. */
 void
 process_activate (void)
@@ -287,7 +273,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
    Stores the executable's entry point into *EIP
    and its initial stack pointer into *ESP.
    Returns true if successful, false otherwise. */
-static bool
+bool
 load (const char *cmd_line, void (**eip) (void), void **esp) 
 {
   struct thread *t = thread_current ();
@@ -411,6 +397,7 @@ load (const char *cmd_line, void (**eip) (void), void **esp)
 }
 
 /* load() helpers. */
+
 static bool install_page (void *upage, void *kpage, bool writable);
 
 /* Checks whether PHDR describes a valid, loadable segment in
@@ -489,37 +476,29 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-      /* Lazy loading, instead of allocating frame right away,
-         just mark the page as if the page is swapped out */
-      uint32_t flag = POS_DISK | TYPE_Executable;
-      if (page_read_bytes == 0)
-          flag |= FS_ZERO;
+      /* Get a page of memory. */
+      uint8_t *kpage = palloc_get_page (PAL_USER);
+      if (kpage == NULL)
+        return false;
 
-      if (!writable)
-          flag |= FS_READONLY;
-
-      block_sector_t sector_idx =
-        byte_to_sector (file_get_inode (file), ofs);
-
-     /* For sharing: traverse frame table, find an executable frame
-         containing this sector block data */
-      struct frame_struct* fs_prev = frame_lookup_exec (sector_idx, flag);
-      if (fs_prev != NULL)	/* Found the same exec page */
+      /* Load this page. */
+      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
         {
-          if (!mark_shared_page (upage, fs_prev))
-            return false;
+          palloc_free_page (kpage);
+          return false; 
         }
-      else			/* Not found, mark a new page */ 
-        {
-          if (!mark_page (upage, NULL, page_read_bytes, flag, sector_idx))
-            return false;
-        }
+      memset (kpage + page_read_bytes, 0, page_zero_bytes);
 
+      /* Add the page to the process's address space. */
+      if (!install_page (upage, kpage, writable)) 
+        {
+          palloc_free_page (kpage);
+          return false; 
+        }
 
       /* Advance. */
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;
-      ofs += page_read_bytes;
       upage += PGSIZE;
     }
   return true;
@@ -536,26 +515,15 @@ setup_stack (void **esp)
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
   if (kpage != NULL) 
     {
-      void* addr = (void*)PHYS_BASE - PGSIZE;
-
-      uint32_t* pd = thread_current ()->pagedir;
-      uint32_t flag = POS_MEM | TYPE_Stack;
-      mark_page (addr, kpage, PGSIZE, flag, SECTOR_ERROR);
-      success = install_page (addr, kpage, true);
+      success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
-      {
-        *esp = PHYS_BASE; 
-        struct thread *t = thread_current ();
-        t->stack_bound = addr;
-      }
+        *esp = PHYS_BASE;
       else
-      {
-        sup_pt_find_and_delete (pd, addr);
         palloc_free_page (kpage);
-      }
     }
   return success;
 }
+
 /* Adds a mapping from user virtual address UPAGE to kernel
    virtual address KPAGE to the page table.
    If WRITABLE is true, the user process may modify the page;
@@ -565,7 +533,7 @@ setup_stack (void **esp)
    with palloc_get_page().
    Returns true on success, false if UPAGE is already mapped or
    if memory allocation fails. */
-bool
+static bool
 install_page (void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current ();
