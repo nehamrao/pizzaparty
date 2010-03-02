@@ -1,8 +1,14 @@
 //cache.c
 #include "cache.h"
+#include "filesys.h"
+#include <stdio.h>
+#include <string.h>
 #include "threads/palloc.h"
 
-static struct cache_block [64];
+static struct cache_block cache_block[64];
+
+/* Is this OK? We do not have SECTOR_ERROR is we use codes from prj2 */
+#define SECTOR_ERROR -1;
 
 void
 cache_init ()
@@ -12,7 +18,7 @@ cache_init ()
 
   for (i = 0; i < 8; i++)
   {
-    kpage = palloc (PAL_ZERO);
+    kpage = (uint8_t*)palloc_get_page (PAL_ZERO);
     for (j = 0; j < 8; j++)
     {
       cache_block[i*8+j].data = kpage + j * BLOCK_SECTOR_SIZE;
@@ -35,9 +41,10 @@ struct cache_block *
 cache_get (block_sector_t sector_no)
 {
   int idx = -1;
-  int min_time_stamp = 1 << 31;
+  uint32_t min_time_stamp = 1 << 31;
   int victim = -1;
 
+  int i = 0;
   for (i = 0; i < 64; i++)
   {
     if (cache_block[i].sector_no == sector_no)
@@ -83,19 +90,19 @@ cache_get (block_sector_t sector_no)
 void 
 cache_read ( struct cache_block *cb, void *data, off_t ofs, int length)
 {
-  acquire_shared (&cb.shared_lock);
+  acquire_shared (&cb->shared_lock);
   memcpy ( data, cb->data + ofs, length);
   /* Read ahead to be implemented here ****************/
-  release_shared (&cb.shared_lock);
+  release_shared (&cb->shared_lock);
 }
 
 void 
 cache_write ( struct cache_block *cb, void *data, off_t ofs, int length)
 {
-  acquire_exclusive (&cb.shared_lock);
+  acquire_exclusive (&cb->shared_lock);
   cb->dirty = blkcmp (cb->data+ofs, data, length);
   memcpy (cb->data+ofs, data, length);
-  release_exclusive (&cb.shared_lock);
+  release_exclusive (&cb->shared_lock);
 }
 
 /* Compare a and b for a given length, return true if different, 
