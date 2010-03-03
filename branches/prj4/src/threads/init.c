@@ -123,9 +123,9 @@ main (void)
 
 #ifdef FILESYS
   /* Initialize file system. */
-  cache_init ();
   ide_init ();
   locate_block_devices ();
+  cache_init ();
   filesys_init (format_filesys);
 #endif
 

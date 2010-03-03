@@ -5,10 +5,12 @@
 #include <string.h>
 #include "threads/palloc.h"
 
-struct cache_block cache_block[64];
-
 /* Is this OK? We do not have SECTOR_ERROR is we use codes from prj2 */
 #define SECTOR_ERROR -1;
+
+struct cache_block cache_block[64];
+
+bool cache_initialized = false;
 
 void
 cache_init ()
@@ -22,6 +24,7 @@ cache_init ()
     for (j = 0; j < 8; j++)
     {
       cache_block[i*8+j].data = kpage + j * BLOCK_SECTOR_SIZE;
+      memset (cache_block[i*8+j].data, 0, BLOCK_SECTOR_SIZE);
     }
   }
   for (i = 0; i < 64; i++)
@@ -34,6 +37,7 @@ cache_init ()
     lock_init (&cache_block[i].shared_lock.lock);
     cond_init (&cache_block[i].shared_lock.cond);
   }
+  cache_initialized = true;
   return;
 }
 
@@ -50,8 +54,12 @@ cache_get (block_sector_t sector_no)
     if (cache_block[i].sector_no == sector_no)
     {
       idx = i;
-      cache_block[i].time_stamp = (cache_block[i].time_stamp >> 1) | (1 << 30);
-    }   
+      cache_block[i].time_stamp = (1 << 30);
+    } else 
+    {
+      if (cache_block[i].time_stamp) 
+        cache_block[i].time_stamp --;
+    }
     if ( (cache_block[i].shared_lock.i == 0)
       && (cache_block[i].time_stamp < min_time_stamp) )
     {
@@ -83,7 +91,8 @@ cache_get (block_sector_t sector_no)
   }
 
   if (idx != -1)
-  {
+  { 
+//	printf ("Found record %ld block\n", idx);
     return &cache_block[idx];
   }
 }
@@ -91,10 +100,11 @@ cache_get (block_sector_t sector_no)
 void 
 cache_read ( struct cache_block *cb, void *data, off_t ofs, int length)
 {
+//  printf ("************** Cache READ!!!!!!!!!!!!!!!!!!!!!! %ld \n", cb->sector_no);
   acquire_shared (&cb->shared_lock);
   if (!cb->present)
   {
-//    printf ("read %ld block from disk\n", cb->sector_no);
+ //   printf ("read %ld block from disk\n", cb->sector_no);
     block_read (fs_device, cb->sector_no, cb->data);
     cb->present = true;
   }
@@ -106,16 +116,20 @@ cache_read ( struct cache_block *cb, void *data, off_t ofs, int length)
 void 
 cache_write ( struct cache_block *cb, void *data, off_t ofs, int length)
 {
+//  printf ("************** Cache Write!!!!!!!!!!!!!!!!!!!!!! %ld \n", cb->sector_no);
   acquire_exclusive (&cb->shared_lock);
   cb->dirty = blkcmp (cb->data+ofs, data, length);
+  cb->present = true;
   memcpy (cb->data+ofs, data, length);
   release_exclusive (&cb->shared_lock);
-  cache_flush (); /* To be removed */
+//  if (!cb->sector_no)
+//    cache_flush (); /* To be removed */
 }
 
 void 
 cache_flush (void)
-{
+{ 
+//  printf ("FFFFFFFFLLLLLLLLLLLLLUUUUUUUUUUUUSSSSSSSSSHHHHHHHHHH\n");
   int i;
   for (i = 0; i < 64; i++)
   {

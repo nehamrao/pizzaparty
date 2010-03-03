@@ -154,7 +154,10 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
 
   /* Check that NAME is not in use. */
   if (lookup (dir, name, NULL, NULL))
+  {
+//    printf ("%s is already in %s\n", name, dir);
     goto done;
+  }
 
   /* Set OFS to offset of free slot.
      If there are no free slots, then it will be set to the
