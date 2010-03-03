@@ -5,7 +5,7 @@
 #include <string.h>
 #include "threads/palloc.h"
 
-static struct cache_block cache_block[64];
+struct cache_block cache_block[64];
 
 /* Is this OK? We do not have SECTOR_ERROR is we use codes from prj2 */
 #define SECTOR_ERROR -1;
@@ -28,8 +28,8 @@ cache_init ()
   {
     cache_block[i].sector_no = SECTOR_ERROR;
     cache_block[i].dirty = false;
+    cache_block[i].present = false;
     cache_block[i].time_stamp = 0;
-    cache_block[i].valid = 0; // Not used ******************8
     cache_block[i].shared_lock.i = 0;
     lock_init (&cache_block[i].shared_lock.lock);
     cond_init (&cache_block[i].shared_lock.cond);
@@ -62,16 +62,17 @@ cache_get (block_sector_t sector_no)
 
   if ((idx == -1) && (victim != -1))
   {
+//    printf ("Evict no: %ld\n", victim);
     /* Eviction process begins */
-    if (cache_block[i].dirty)
+    if (cache_block[victim].dirty)
     {
     /* Write behind to be implemented here *******************************************/
       block_write (fs_device, cache_block[victim].sector_no, cache_block[victim].data);
-      cache_block[victim].sector_no = sector_no;
       cache_block[victim].dirty = false;
-      cache_block[victim].time_stamp = (1 << 30);
-      cache_block[victim].data = NULL;
     }
+    cache_block[victim].sector_no = sector_no;
+    cache_block[victim].present = false;
+    cache_block[victim].time_stamp = (1 << 30);
     return &cache_block[victim];
   }
 
@@ -91,6 +92,12 @@ void
 cache_read ( struct cache_block *cb, void *data, off_t ofs, int length)
 {
   acquire_shared (&cb->shared_lock);
+  if (!cb->present)
+  {
+//    printf ("read %ld block from disk\n", cb->sector_no);
+    block_read (fs_device, cb->sector_no, cb->data);
+    cb->present = true;
+  }
   memcpy ( data, cb->data + ofs, length);
   /* Read ahead to be implemented here ****************/
   release_shared (&cb->shared_lock);
@@ -103,6 +110,21 @@ cache_write ( struct cache_block *cb, void *data, off_t ofs, int length)
   cb->dirty = blkcmp (cb->data+ofs, data, length);
   memcpy (cb->data+ofs, data, length);
   release_exclusive (&cb->shared_lock);
+  cache_flush (); /* To be removed */
+}
+
+void 
+cache_flush (void)
+{
+  int i;
+  for (i = 0; i < 64; i++)
+  {
+    if (cache_block[i].dirty)
+    {
+      block_write (fs_device, cache_block[i].sector_no, cache_block[i].data);
+      cache_block[i].dirty = false;
+    }
+  }
 }
 
 /* Compare a and b for a given length, return true if different, 
