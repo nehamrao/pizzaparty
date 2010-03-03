@@ -37,7 +37,12 @@ struct inode
     int open_cnt;                       /* Number of openers. */
     bool removed;                       /* True if deleted, false otherwise. */
     int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
-    struct inode_disk data;             /* Inode content. */
+
+/****************************************************/   
+    bool is_dir;
+    block_sector_t start;
+    off_t length;
+ //   struct inode_disk data;             /* Inode content. */
   };
 
 /* Returns the block device sector that contains byte offset POS
@@ -48,8 +53,8 @@ static block_sector_t
 byte_to_sector (const struct inode *inode, off_t pos) 
 {
   ASSERT (inode != NULL);
-  if (pos < inode->data.length)
-    return inode->data.start + pos / BLOCK_SECTOR_SIZE;
+  if (pos < inode->length)
+    return inode->start + pos / BLOCK_SECTOR_SIZE; // change
   else
     return -1;
 }
@@ -91,7 +96,8 @@ inode_create (block_sector_t sector, off_t length)
       if (free_map_allocate (sectors, &disk_inode->start)) 
         {
 /*********************************************************************/
-          block_write (fs_device, sector, disk_inode);
+//          block_write (fs_device, sector, disk_inode);
+          cache_write (cache_get (sector), disk_inode, 0, BLOCK_SECTOR_SIZE);
 /*********************************************************************/
           if (sectors > 0) 
             {
@@ -100,7 +106,10 @@ inode_create (block_sector_t sector, off_t length)
               
               for (i = 0; i < sectors; i++) 
 /*********************************************************************/
-                block_write (fs_device, disk_inode->start + i, zeros);
+              {
+                cache_write (cache_get (disk_inode->start + i), zeros, 0, BLOCK_SECTOR_SIZE);
+//                block_write (fs_device, disk_inode->start + i, zeros);
+              }
 /*********************************************************************/
             }
           success = true; 
@@ -142,8 +151,16 @@ inode_open (block_sector_t sector)
   inode->open_cnt = 1;
   inode->deny_write_cnt = 0;
   inode->removed = false;
+
+//  inode->is_dir = false;
+  inode->start = -1; // change
+  inode->length = -1; // change
 /*********************************************************************/
-  cache_read (cache_get (inode->sector), &inode->data, 0, BLOCK_SECTOR_SIZE);
+  struct inode_disk data;
+  cache_read (cache_get (inode->sector), &data, 0, BLOCK_SECTOR_SIZE);
+  ASSERT (data.magic == INODE_MAGIC); // need change
+  inode->length = data.length;
+  inode->start = data.start;
 //  block_read (fs_device, inode->sector, &inode->data);
 /*********************************************************************/
   return inode;
@@ -185,8 +202,8 @@ inode_close (struct inode *inode)
       if (inode->removed) 
         {
           free_map_release (inode->sector, 1);
-          free_map_release (inode->data.start,
-                            bytes_to_sectors (inode->data.length)); 
+          free_map_release (inode->start, // change
+                            bytes_to_sectors (inode->length));  // change
         }
 
       free (inode); 
@@ -354,5 +371,5 @@ inode_allow_write (struct inode *inode)
 off_t
 inode_length (const struct inode *inode)
 {
-  return inode->data.length;
+  return inode->length;
 }
