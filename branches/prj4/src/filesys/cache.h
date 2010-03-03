@@ -14,8 +14,8 @@ struct cache_block
 {
   block_sector_t sector_no;
   bool dirty;
+  bool present;
   unsigned int time_stamp;
-  bool valid;
   struct shared_lock shared_lock;
   void *data;
 };
@@ -29,3 +29,4 @@ void acquire_shared (struct shared_lock *s);
 void acquire_exclusive (struct shared_lock *s);
 void release_shared (struct shared_lock *s);
 void release_exclusive (struct shared_lock *s);
+void cache_flush (void);
