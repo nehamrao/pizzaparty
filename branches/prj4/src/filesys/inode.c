@@ -21,7 +21,7 @@
    Must be exactly BLOCK_SECTOR_SIZE bytes long. */
 struct inode_disk
   {
-    block_sector_t start;               /* First data sector. */
+    //block_sector_t start;               /* First data sector. */
     off_t length;                       /* File size in bytes. */
     off_t end;                          /* End of the portion of file
                                            actually writtent in bytes. */
@@ -31,7 +31,7 @@ struct inode_disk
                                         /* Direct blocks and 2 more for 
                                            single, double indirect blocks */
 
-    uint32_t unused[122 - NUM_DBLOCK]; /* Not used. */
+    uint32_t unused[123 - NUM_DBLOCK]; /* Not used. */
   };
 
 /* Returns the number of sectors to allocate for an inode SIZE
@@ -60,7 +60,7 @@ struct inode
 
 /* yinfeng ***************************************************/
 /* Allocate a sector with given BLOCK_CONTENT written */
-static block_sector_t
+block_sector_t
 allocate_sector (block_sector_t* block_content)
 {
   block_sector_t allocated_sector = -1;
@@ -77,7 +77,7 @@ allocate_sector (block_sector_t* block_content)
 
 /* Allocate an indirect sector, containing RANGE number of leaf sectors
    each written with given BLOCK_CONTENT */
-static block_sector_t
+block_sector_t
 allocate_indirect_sector (block_sector_t* block_content, int range)
 {
   /* Allocate and record leaf nodes */
@@ -102,12 +102,14 @@ allocate_indirect_sector (block_sector_t* block_content, int range)
 /* yinfeng ***************************************************/
 /* Expand inode, allocate new blocks from previous END all the way to POS
    update END and LENGTH if necessary */
-static bool
+bool
 expand_inode (const struct inode* inode, off_t pos)
 {
   /* In memory indirect- and double-indirect- block inodes */
   block_sector_t* ind_block  = calloc (1, BLOCK_SECTOR_SIZE);
   block_sector_t* dind_block = calloc (1, BLOCK_SECTOR_SIZE);
+  if (ind_block == NULL || dind_block == NULL)
+    return false;
 
   /* Prepare empty block, used to fill newly allocated sectors */
   block_sector_t* empty_block = calloc (1, BLOCK_SECTOR_SIZE);
@@ -117,17 +119,17 @@ expand_inode (const struct inode* inode, off_t pos)
   int i = 0;
   block_sector_t sec_pos = pos / BLOCK_SECTOR_SIZE;
   block_sector_t end_pos = inode->data->end / BLOCK_SECTOR_SIZE;
-  while (end_pos < sec_pos)
+  while (end_pos <= sec_pos)
     {
       if (end_pos < NUM_DBLOCK)                 /* Direct nodes */
         {
-          for (i = end_pos + 1; i < NUM_DBLOCK && i <= sec_pos; i++)
+          for (i = end_pos; i < NUM_DBLOCK && i <= sec_pos; i++)
             {
               inode->data->blocks[i] = allocate_sector (empty_block);
             }
 
           /* Update inode end position */
-          end_pos = i - 1;
+          end_pos = i;
         }
       else if (end_pos < NUM_DBLOCK + 128)      /* Single indirect nodes */
         {
@@ -142,7 +144,7 @@ expand_inode (const struct inode* inode, off_t pos)
                 allocate_indirect_sector (empty_block, range);
 
               /* Update inode end position */
-              end_pos = NUM_DBLOCK + range - 1;
+              end_pos = NUM_DBLOCK + range;
             }
           else  /* Already allocated first level indirect nodes */
             {
@@ -161,7 +163,7 @@ expand_inode (const struct inode* inode, off_t pos)
                            ind_block, 0, BLOCK_SECTOR_SIZE);
 
               /* Update inode end position */
-              end_pos = i - 1;
+              end_pos = i;
             }
         }
       else                                      /* Double indirect nodes */
@@ -189,7 +191,7 @@ expand_inode (const struct inode* inode, off_t pos)
               inode->data->blocks[NUM_DBLOCK + 1] = allocate_sector (dind_block);
 
               /* Update inode end position */
-              end_pos = sec_pos;
+              end_pos = sec_pos + 1;
             }
           else  /* Already allocated first level indirect nodes */
             {
@@ -232,14 +234,17 @@ expand_inode (const struct inode* inode, off_t pos)
                 }
 
                 /* Update inode end position */
-                end_pos = sec_pos;
+                end_pos = sec_pos + 1;
             }
         }
     }
 
   /* Actually record updated inode end position */
-  inode->data->end = sec_pos;
-  inode->data->length = sec_pos;
+  inode->data->end = end_pos * BLOCK_SECTOR_SIZE;
+  inode->data->length = end_pos * BLOCK_SECTOR_SIZE;
+
+  /* Write the updated inode info back to disk */
+  cache_write (cache_get (inode->sector), inode, 0 , BLOCK_SECTOR_SIZE);
 
   /* Clean up */
   free (ind_block);
@@ -254,22 +259,22 @@ expand_inode (const struct inode* inode, off_t pos)
 /* Returns the block device sector that contains byte offset POS within INODE.
    First expand the inode as indicated by ENABLE_EXPAND
    Then lookup in the inode */
-static block_sector_t
+block_sector_t
 byte_to_sector (const struct inode *inode, off_t pos, bool enable_expand)
 {
   ASSERT (inode != NULL);
 
   /* Expand the file if necessary
      also updated LENGTH and END in inode for following lookups */
-  if (pos > inode->data->end && enable_expand)
+  if (pos >= inode->data->end && enable_expand)
     expand_inode (inode, pos);
-  else if (pos > inode->data->end && !enable_expand)
+  else if (pos >= inode->data->end && !enable_expand)
     return -1;
 
 
   /* By now we have expanded file if necessary,
      and it is safe to query all positions before inode->end */
-  if (pos <= inode->data->end)  /* With current range of file */
+  if (pos < inode->data->end)  /* With current range of file */
     {
       block_sector_t result = -1;
       block_sector_t sec_pos = pos / BLOCK_SECTOR_SIZE;
@@ -366,8 +371,9 @@ inode_create (block_sector_t sector, off_t length)
       disk_inode->end = 0;
       disk_inode->magic = INODE_MAGIC;
       cache_write (cache_get (sector), disk_inode, 0, BLOCK_SECTOR_SIZE);
+      success = true;
       free (disk_inode);
-      /*
+     /*
       size_t sectors = bytes_to_sectors (length);
       if (free_map_allocate (sectors, &disk_inode->start)) 
         {
@@ -462,6 +468,9 @@ inode_close (struct inode *inode)
   /* Ignore null pointer. */
   if (inode == NULL)
     return;
+
+  /* Write content back to disk */
+  cache_flush ();
 
   /* Release resources if this was the last opener. */
   if (--inode->open_cnt == 0)
