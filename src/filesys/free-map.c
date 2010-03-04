@@ -28,6 +28,7 @@ bool
 free_map_allocate (size_t cnt, block_sector_t *sectorp)
 {
   block_sector_t sector = bitmap_scan_and_flip (free_map, 0, cnt, false);
+  /*
   if (sector != BITMAP_ERROR
       && free_map_file != NULL
       && !bitmap_write (free_map, free_map_file))
@@ -35,8 +36,10 @@ free_map_allocate (size_t cnt, block_sector_t *sectorp)
       bitmap_set_multiple (free_map, sector, cnt, false); 
       sector = BITMAP_ERROR;
     }
+    */
   if (sector != BITMAP_ERROR)
     *sectorp = sector;
+
   return sector != BITMAP_ERROR;
 }
 
@@ -46,7 +49,9 @@ free_map_release (block_sector_t sector, size_t cnt)
 {
   ASSERT (bitmap_all (free_map, sector, cnt));
   bitmap_set_multiple (free_map, sector, cnt, false);
+  /*
   bitmap_write (free_map, free_map_file);
+  */
 }
 
 /* Opens the free map file and reads it from disk. */
