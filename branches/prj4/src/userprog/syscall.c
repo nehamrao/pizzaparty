@@ -363,10 +363,8 @@ _seek (int fd, unsigned position)
       kill_process ();
     }
 
-  if (position > (unsigned)_filesize (fd)) 
-    position = (unsigned)_filesize (fd);
-
-  /* Seek to desired position */
+  /* Seek to desired position.
+     Beginning from project 4, user can seek past the end of file */
   struct thread* t = thread_current ();
   t->array_files[fd]->pos = position;
 }
