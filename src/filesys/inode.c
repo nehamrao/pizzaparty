@@ -24,7 +24,7 @@ struct inode_disk
     //block_sector_t start;               /* First data sector. */
     off_t length;                       /* File size in bytes. */
     off_t end;                          /* End of the portion of file
-                                           actually writtent in bytes. */
+                                           actually written in bytes. */
     unsigned magic;                     /* Magic number. */
 
     block_sector_t blocks[NUM_DBLOCK + 2];
@@ -80,6 +80,13 @@ allocate_sector (block_sector_t* block_content)
 block_sector_t
 allocate_indirect_sector (block_sector_t* block_content, int range)
 {
+  /* TODO define 128 */
+  if (range > BLOCK_SECTOR_SIZE / sizeof (block_sector_t))
+    {
+      printf ("Allocate range no greater than 128\n");
+      return -1;
+    }
+
   /* Allocate and record leaf nodes */
   block_sector_t* indirect_block = calloc (1, BLOCK_SECTOR_SIZE);
   int i = 0;
@@ -107,9 +114,15 @@ expand_inode (const struct inode* inode, off_t pos)
 {
   /* In memory indirect- and double-indirect- block inodes */
   block_sector_t* ind_block  = calloc (1, BLOCK_SECTOR_SIZE);
-  block_sector_t* dind_block = calloc (1, BLOCK_SECTOR_SIZE);
-  if (ind_block == NULL || dind_block == NULL)
+  if (ind_block == NULL)
     return false;
+  block_sector_t* dind_block = calloc (1, BLOCK_SECTOR_SIZE);
+  if (dind_block == NULL)
+    {
+      free (ind_block);
+      return false;
+    }
+
 
   /* Prepare empty block, used to fill newly allocated sectors */
   block_sector_t* empty_block = calloc (1, BLOCK_SECTOR_SIZE);
@@ -119,32 +132,33 @@ expand_inode (const struct inode* inode, off_t pos)
   int i = 0;
   block_sector_t sec_pos = pos / BLOCK_SECTOR_SIZE;
   block_sector_t end_pos = inode->data->end / BLOCK_SECTOR_SIZE;
-  while (end_pos <= sec_pos)
+  /* TODO determine if pos exceed limit */
+  while (end_pos < sec_pos)
     {
-      if (end_pos < NUM_DBLOCK)                 /* Direct nodes */
+      if (end_pos < NUM_DBLOCK - 1)             /* Direct nodes */
         {
-          for (i = end_pos; i < NUM_DBLOCK && i <= sec_pos; i++)
+          for (i = end_pos + 1; i < NUM_DBLOCK && i <= sec_pos; i++)
             {
               inode->data->blocks[i] = allocate_sector (empty_block);
             }
 
           /* Update inode end position */
-          end_pos = i;
+          end_pos = i - 1;
         }
-      else if (end_pos < NUM_DBLOCK + 128)      /* Single indirect nodes */
+      else if (end_pos < NUM_DBLOCK + 127)      /* Single indirect nodes */
         {
           /* Not yet allocated first level indirect nodes */
           if (inode->data->blocks[NUM_DBLOCK] == 0)
             {
-              int range = (sec_pos - NUM_DBLOCK < 128) ?
-                          (sec_pos - NUM_DBLOCK) : 128;
+              int range = (sec_pos - NUM_DBLOCK + 1 < 128) ?
+                          (sec_pos - NUM_DBLOCK + 1) : 128;
 
               /* Allocate first level indirect nodes */
               inode->data->blocks[NUM_DBLOCK] =
                 allocate_indirect_sector (empty_block, range);
 
               /* Update inode end position */
-              end_pos = NUM_DBLOCK + range;
+              end_pos = NUM_DBLOCK + range - 1;
             }
           else  /* Already allocated first level indirect nodes */
             {
@@ -163,88 +177,118 @@ expand_inode (const struct inode* inode, off_t pos)
                            ind_block, 0, BLOCK_SECTOR_SIZE);
 
               /* Update inode end position */
-              end_pos = i;
+              end_pos = i - 1;
             }
         }
       else                                      /* Double indirect nodes */
         {
           /* Two level of index into blocks */
-          block_sector_t idx1 = (sec_pos - NUM_DBLOCK) / 128 - 1;
-          block_sector_t idx2 = (sec_pos - NUM_DBLOCK) % 128;
+          block_sector_t idx1 = (sec_pos - NUM_DBLOCK) % 128;
+          block_sector_t idx2 = (sec_pos - NUM_DBLOCK) / 128 - 1;
 
-          /* If not yet allocated first level indirect nodes */
+          /* If not yet allocated second level indirect nodes */
           if (inode->data->blocks[NUM_DBLOCK + 1] == 0)
             {
-              /* Allocate second level indirect nodes necessary, up to idx1-1,
+              /* Allocate first level indirect nodes necessary, up to idx2-1,
                  all with 128 data blocks */
-              for (i = 0; i < idx1; i++)
+              for (i = 0; i < idx2; i++)
                 {
                   dind_block[i] = allocate_indirect_sector (empty_block, 128);
                 }
 
-              /* Allocate second level indirect node at idx1,
-                 with idx2 + 1 data blocks */
-              dind_block[idx1] =
-                allocate_indirect_sector (empty_block, idx2 + 1);
+              /* Allocate second level indirect node at idx2,
+                 with idx1 + 1 data blocks */
+              dind_block[idx2] =
+                allocate_indirect_sector (empty_block, idx1 + 1);
 
               /* Record the first level indirect node at on-disk inode */
               inode->data->blocks[NUM_DBLOCK + 1] = allocate_sector (dind_block);
 
               /* Update inode end position */
-              end_pos = sec_pos + 1;
+              end_pos = sec_pos;
             }
-          else  /* Already allocated first level indirect nodes */
+          else  /* Already allocated second level indirect nodes */
             {
               /* Read first level indirect nodes */
               cache_read (cache_get (inode->data->blocks[NUM_DBLOCK + 1]),
                           dind_block, 0, BLOCK_SECTOR_SIZE);
 
-              /* Allocate second level indirect nodes, up to idx1 - 1,
+              /* Allocate first level indirect nodes, up to idx2 - 1,
                  if not yet allocated
                  all with 128 data blocks */
-              for (i = 0; i < idx1; i++)
+              int idx = 0;
+              for (i = 0; i < idx2; i++)
                 {
                   if (dind_block[i] == 0)
                     {
                       dind_block[i] =
                         allocate_indirect_sector (empty_block, 128);
                     }
+                  else
+                    {
+                      idx = i;
+                    }
+                }
+              if (idx != idx2)
+                {
+                  cache_read (cache_get (dind_block[idx]), ind_block,
+                              0, BLOCK_SECTOR_SIZE);
+                  int j = 0;
+                  for (j = 0; j < 128; j++)
+                    {
+                      if (ind_block[j] == 0)
+                        {
+                          ind_block[j] =
+                            allocate_sector (empty_block);
+                        }
+                    }
+                  cache_write (cache_get (dind_block[idx], ind_block,
+                               0, BLOCK_SECTOR_SIZE);
                 }
 
-              /* Allocate second level indirect nodes at idx1,
+              /* Allocate first level indirect nodes at idx2,
                  if not yet allocated
-                 with idx2 + 1 data blocks */
-              if (dind_block[idx1] == 0)
+                 with idx1 + 1 data blocks */
+              if (dind_block[idx2] == 0)
                 {
-                  dind_block[idx1] =
-                        allocate_indirect_sector (empty_block, idx2 + 1);
+                  dind_block[idx2] =
+                        allocate_indirect_sector (empty_block, idx1 + 1);
                 }
-              else  /* Already allocated second level indirect node */
+              else  /* Already allocated first level indirect node */
                 {
-                  /* Read second level indirect node */
-                  cache_read (cache_get (dind_block[idx1]),
+                  /* Read first level indirect node */
+                  cache_read (cache_get (dind_block[idx2]),
                               ind_block, 0, BLOCK_SECTOR_SIZE);
 
                   /* Record newly allocated sector */
-                  ind_block[idx2] = allocate_sector (empty_block);
+                  for (i = 0; i < idx1 + 1; i++)
+                    {
+                      if (ind_block[i] == 0)
+                        {
+                          ind_block[i] = allocate_sector (empty_block);
+                        }
+                    }
 
-                  /* Update second level indirect nodes */
-                  cache_write (cache_get (dind_block[idx1]),
+                  /* Update first level indirect nodes */
+                  cache_write (cache_get (dind_block[idx2]),
                                ind_block, 0, BLOCK_SECTOR_SIZE);
                 }
 
                 /* Update inode end position */
-                end_pos = sec_pos + 1;
+                end_pos = sec_pos;
             }
         }
     }
 
   /* Actually record updated inode end position */
-  inode->data->end = end_pos * BLOCK_SECTOR_SIZE;
-  inode->data->length = end_pos * BLOCK_SECTOR_SIZE;
+  inode->data->end = pos;
+
+  /* Update length if end exceed previous file length */
+  if (inode->data->length < inode->data->end)
+    inode->data->length = inode->data->end;
 
   /* Write the updated inode info back to disk */
-  cache_write (cache_get (inode->sector), inode, 0 , BLOCK_SECTOR_SIZE);
+  cache_write (cache_get (inode->sector), inode->data, 0 , BLOCK_SECTOR_SIZE);
 
   /* Clean up */
   free (ind_block);
@@ -264,71 +308,80 @@ byte_to_sector (const struct inode *inode, off_t pos, bool enable_expand)
 {
   ASSERT (inode != NULL);
 
+  // read data
+
   /* Expand the file if necessary
      also updated LENGTH and END in inode for following lookups */
-  if (pos >= inode->data->end && enable_expand)
-    expand_inode (inode, pos);
-  else if (pos >= inode->data->end && !enable_expand)
-    return -1;
-
-
-  /* By now we have expanded file if necessary,
-     and it is safe to query all positions before inode->end */
-  if (pos < inode->data->end)  /* With current range of file */
+  if (pos > inode->data->end)
     {
-      block_sector_t result = -1;
-      block_sector_t sec_pos = pos / BLOCK_SECTOR_SIZE;
-
-      if (sec_pos < NUM_DBLOCK)            /* From direct blocks */
+      if (enable_expand)
         {
-          /* Get result sector number */
-          result = inode->data->blocks[sec_pos];
+          // free data
+          expand_inode (inode, pos);
+          // read again data
         }
-      else if (sec_pos < NUM_DBLOCK + 128) /* From single indirect blocks */
-        {
-          /* Read indirect blocks */
-          block_sector_t* ind_inode = calloc (1, BLOCK_SECTOR_SIZE);
-          if (ind_inode == NULL)
-            return -1;
-          cache_read (cache_get (inode->data->blocks[NUM_DBLOCK]),
-                      ind_inode, 0, BLOCK_SECTOR_SIZE);
-
-          /* Get result sector number */
-          result = ind_inode[sec_pos - NUM_DBLOCK];
-
-          /* Clean up */
-          free (ind_inode);
-        }
-      else                                 /* From double indirect blocks */
-        {
-          /* Read indirect and double indirect blocks */
-          block_sector_t* ind_inode = calloc (1, BLOCK_SECTOR_SIZE);
-          block_sector_t* d_ind_inode = calloc (1, BLOCK_SECTOR_SIZE);
-          if (ind_inode == NULL || d_ind_inode == NULL)
-            return -1;
-          cache_read (cache_get (inode->data->blocks[NUM_DBLOCK + 1]),
-                      ind_inode, 0, BLOCK_SECTOR_SIZE);
-
-          /* Compute the double indirect block needed */
-          block_sector_t dblock_idx = (sec_pos - 128 - NUM_DBLOCK) / 128;
-
-          cache_read (cache_get (ind_inode[dblock_idx]),
-                      d_ind_inode, 0, BLOCK_SECTOR_SIZE);
-
-          /* Get result sector number */
-          result = d_ind_inode[(sec_pos - NUM_DBLOCK) %128];
-
-          /* Clean up */
-          free (ind_inode);
-          free (d_ind_inode);
-        }
-
-      return result;
+      else
+        return -1;
     }
-  else
-    {
-      return -1;
-    }
+
+
+ /* By now we have expanded file if necessary,
+    and it is safe to query all positions before inode->end */
+    block_sector_t result = -1;
+    block_sector_t sec_pos = pos / BLOCK_SECTOR_SIZE;
+
+    if (sec_pos < NUM_DBLOCK)            /* From direct blocks */
+      {
+        /* Get result sector number */
+        result = inode->data->blocks[sec_pos];
+      }
+    else if (sec_pos < NUM_DBLOCK + 128) /* From single indirect blocks */
+      {
+        /* Read indirect blocks */
+        block_sector_t* ind_inode = calloc (1, BLOCK_SECTOR_SIZE);
+        if (ind_inode == NULL)
+          return -1;
+        cache_read (cache_get (inode->data->blocks[NUM_DBLOCK]),
+                    ind_inode, 0, BLOCK_SECTOR_SIZE);
+
+        /* Get result sector number */
+        result = ind_inode[sec_pos - NUM_DBLOCK];
+
+        /* Clean up */
+        free (ind_inode);
+      }
+    else                                 /* From double indirect blocks */
+      {
+         /* Read indirect and double indirect blocks */
+        block_sector_t* ind_inode = calloc (1, BLOCK_SECTOR_SIZE);
+        if (ind_inode == NULL)
+          return -1;
+        block_sector_t* dind_inode = calloc (1, BLOCK_SECTOR_SIZE);
+        if (dind_inode == NULL)
+          {
+            free (ind_inode);
+            return -1;
+          }
+
+        cache_read (cache_get (inode->data->blocks[NUM_DBLOCK + 1]),
+                     dind_inode, 0, BLOCK_SECTOR_SIZE);
+
+        /* Compute the double indirect block needed */
+        block_sector_t idx1 = (sec_pos - NUM_DBLOCK) %128;
+        block_sector_t idx2 = (sec_pos - NUM_DBLOCK) / 128 - 1;
+
+        cache_read (cache_get (dind_inode[idx2]),
+                    ind_inode, 0, BLOCK_SECTOR_SIZE);
+
+        /* Get result sector number */
+        result = ind_inode[idx1];
+
+        /* Clean up */
+        free (ind_inode);
+        free (dind_inode);
+      }
+
+    return result;
 }
 /* yinfeng ***************************************************/
 
@@ -368,29 +421,11 @@ inode_create (block_sector_t sector, off_t length)
          and actual end of the file is initalized to 0
          other blocks are only write when later writes are past end */
       disk_inode->length = length;
-      disk_inode->end = 0;
+      disk_inode->end = -1;
       disk_inode->magic = INODE_MAGIC;
       cache_write (cache_get (sector), disk_inode, 0, BLOCK_SECTOR_SIZE);
       success = true;
       free (disk_inode);
-     /*
-      size_t sectors = bytes_to_sectors (length);
-      if (free_map_allocate (sectors, &disk_inode->start)) 
-        {
-          block_write (fs_device, sector, disk_inode);
-          if (sectors > 0) 
-            {
-              static char zeros[BLOCK_SECTOR_SIZE];
-              size_t i;
-              
-              for (i = 0; i < sectors; i++) 
-              {
-                block_write (fs_device, disk_inode->start + i, zeros);
-              }
-            }
-          success = true; 
-        } 
-      */
 /* yinfeng **********************************************************/
     }
   return success;
@@ -487,13 +522,14 @@ inode_close (struct inode *inode)
           block_sector_t* ind_block = NULL;
           block_sector_t* dind_block = NULL;
 
-          calloc (1, BLOCK_SECTOR_SIZE);
-          cache_read (cache_get (inode->sector),
-                      ind_block, 0, BLOCK_SECTOR_SIZE);
+          //ind_block = calloc (1, BLOCK_SECTOR_SIZE);
+          //cache_read (cache_get (inode->sector),
+                      //ind_block, 0, BLOCK_SECTOR_SIZE);
+                      /*TODO */
 
           int i = 0;
           block_sector_t end_pos = inode->data->end / BLOCK_SECTOR_SIZE;
-          for (i = 0; i < end_pos; i++)
+          for (i = 0; i <= end_pos; i++)
             {
               if (i < NUM_DBLOCK)
                 {
@@ -504,12 +540,15 @@ inode_close (struct inode *inode)
                   if (ind_block == NULL)
                     {
                       ind_block = calloc (1, BLOCK_SECTOR_SIZE);
+                      /* TODO check out of memory
+                         use goto Done to free all resource */
                       cache_read (cache_get (inode->data->blocks[NUM_DBLOCK]),
                                   ind_block, 0, BLOCK_SECTOR_SIZE);
                     }
 
                   free_map_release (ind_block[i - NUM_DBLOCK], 1);
 
+                  /* TODO free whatever */
                   if (i == NUM_DBLOCK + 127)
                     {
                       free_map_release (inode->data->blocks[NUM_DBLOCK], 1);
@@ -524,14 +563,14 @@ inode_close (struct inode *inode)
                                   dind_block, 0, BLOCK_SECTOR_SIZE);
                     }
 
-                  block_sector_t idx1 = (i - NUM_DBLOCK) / 128 - 1;
-                  block_sector_t idx2 = (i - NUM_DBLOCK) % 128;
-                  cache_read (cache_get (dind_block[idx1]),
+                  block_sector_t idx1 = (i - NUM_DBLOCK) % 128;
+                  block_sector_t idx2 = (i - NUM_DBLOCK) / 128 - 1;
+                  cache_read (cache_get (dind_block[idx2]),
                               ind_block, 0, BLOCK_SECTOR_SIZE);
 
-                  free_map_release (ind_block[idx2], 1);
+                  free_map_release (ind_block[idx1], 1);
 
-                  if (idx2 == 127)
+                  if (idx1 == 127)
                     {
                       free_map_release (dind_block[idx1], 1);
                     }
