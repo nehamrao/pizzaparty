@@ -242,7 +242,7 @@ expand_inode (const struct inode* inode, off_t pos)
                             allocate_sector (empty_block);
                         }
                     }
-                  cache_write (cache_get (dind_block[idx], ind_block,
+                  cache_write (cache_get (dind_block[idx]), ind_block,
                                0, BLOCK_SECTOR_SIZE);
                 }
 
@@ -522,75 +522,65 @@ inode_close (struct inode *inode)
           block_sector_t* ind_block = NULL;
           block_sector_t* dind_block = NULL;
 
-          //ind_block = calloc (1, BLOCK_SECTOR_SIZE);
-          //cache_read (cache_get (inode->sector),
-                      //ind_block, 0, BLOCK_SECTOR_SIZE);
-                      /*TODO */
-
           int i = 0;
+          int j = 0;
           block_sector_t end_pos = inode->data->end / BLOCK_SECTOR_SIZE;
-          for (i = 0; i <= end_pos; i++)
+
+          /* Release direct nodes */
+          for (i = 0; i < NUM_DBLOCK && i <= end_pos; i++)
             {
-              if (i < NUM_DBLOCK)
-                {
-                  free_map_release (inode->data->blocks[i], 1);
-                }
-              else if (i < NUM_DBLOCK + 128)
-                {
-                  if (ind_block == NULL)
-                    {
-                      ind_block = calloc (1, BLOCK_SECTOR_SIZE);
-                      /* TODO check out of memory
-                         use goto Done to free all resource */
-                      cache_read (cache_get (inode->data->blocks[NUM_DBLOCK]),
-                                  ind_block, 0, BLOCK_SECTOR_SIZE);
-                    }
+              free_map_release (inode->data->blocks[i], 1);
+            }
+          if (i == end_pos + 1)
+            goto DONE;
 
-                  free_map_release (ind_block[i - NUM_DBLOCK], 1);
+          /* Release single indirect nodes */
+          ind_block = calloc (1, BLOCK_SECTOR_SIZE);
+          if (ind_block == NULL)
+            goto DONE;
+          cache_read (cache_get (inode->data->blocks[NUM_DBLOCK]),
+                      ind_block, 0, BLOCK_SECTOR_SIZE);
+          for (i = NUM_DBLOCK; i < NUM_DBLOCK + 128 && i <= end_pos; i++)
+            {
+              free_map_release (ind_block[i - NUM_DBLOCK], 1);
+            }
+          free_map_release (inode->data->blocks[NUM_DBLOCK], 1);
+          if (i == end_pos + 1)
+            goto DONE;
 
-                  /* TODO free whatever */
-                  if (i == NUM_DBLOCK + 127)
-                    {
-                      free_map_release (inode->data->blocks[NUM_DBLOCK], 1);
-                    }
-                }
-              else
+          /* Release double indirect nodes */
+          dind_block = calloc (1, BLOCK_SECTOR_SIZE);
+          if (dind_block == NULL)
+            goto DONE;
+          cache_read (cache_get (inode->data->blocks[NUM_DBLOCK + 1]),
+                      dind_block, 0, BLOCK_SECTOR_SIZE);
+          for (j = 0; j < 128; j++)
+            {
+              if (dind_block[j] != 0)
                 {
-                  if (dind_block == NULL)
-                    {
-                      dind_block = calloc (1, BLOCK_SECTOR_SIZE);
-                      cache_read (cache_get (inode->data->blocks[NUM_DBLOCK + 1]),
-                                  dind_block, 0, BLOCK_SECTOR_SIZE);
-                    }
-
-                  block_sector_t idx1 = (i - NUM_DBLOCK) % 128;
-                  block_sector_t idx2 = (i - NUM_DBLOCK) / 128 - 1;
-                  cache_read (cache_get (dind_block[idx2]),
+                  cache_read (cache_get (dind_block[j]),
                               ind_block, 0, BLOCK_SECTOR_SIZE);
-
-                  free_map_release (ind_block[idx1], 1);
-
-                  if (idx1 == 127)
+                  for (i = 0; i < 128; i++)
                     {
-                      free_map_release (dind_block[idx1], 1);
+                      if (ind_block[i] != 0)
+                        {
+                          free_map_release (ind_block[i], 1);
+                        }
                     }
+                  free_map_release (dind_block[j], 1);
                 }
             }
 
+          /* Release metadata node */
           free_map_release (inode->sector, 1);
 
+DONE:
           if (ind_block != NULL)
             free (ind_block);
           if (dind_block != NULL)
             free (dind_block);
-
-          //free_map_release (inode->data->start,
-          //                  bytes_to_sectors (inode->data->length));
-          //free_map_release (inode->start, // change
-          //                  bytes_to_sectors (inode->length));  // change
 /* yinfeng *************************************************************/
         }
-
       free (inode); 
     }
 }
