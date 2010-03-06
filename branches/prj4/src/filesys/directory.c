@@ -152,13 +152,13 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
   if (*name == '\0' || strlen (name) > NAME_MAX)
     return false;
 
+
   /* Check that NAME is not in use. */
   if (lookup (dir, name, NULL, NULL))
   {
 //    printf ("%s is already in %s\n", name, dir);
     goto done;
   }
-
   /* Set OFS to offset of free slot.
      If there are no free slots, then it will be set to the
      current end-of-file.
@@ -170,7 +170,6 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
        ofs += sizeof e) 
     if (!e.in_use)
       break;
-
   /* Write slot. */
   e.in_use = true;
   strlcpy (e.name, name, sizeof e.name);

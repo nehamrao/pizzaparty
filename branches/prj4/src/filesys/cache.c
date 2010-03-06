@@ -86,13 +86,13 @@ cache_get (block_sector_t sector_no)
 
   if ((idx == -1) && (victim == -1))
   {
-    printf ("Cache busy!\n");   /*********/
+//    printf ("Cache busy!\n");   /*********/
     return NULL;
   }
 
   if (idx != -1)
   { 
-//	printf ("Found record %ld block\n", idx);
+//    printf ("Found record %ld block\n", idx);
     return &cache_block[idx];
   }
 }
@@ -104,7 +104,7 @@ cache_read ( struct cache_block *cb, void *data, off_t ofs, int length)
   acquire_shared (&cb->shared_lock);
   if (!cb->present)
   {
- //   printf ("read %ld block from disk\n", cb->sector_no);
+//    printf ("read %ld block from disk\n", cb->sector_no);
     block_read (fs_device, cb->sector_no, cb->data);
     cb->present = true;
   }
@@ -123,7 +123,7 @@ cache_write ( struct cache_block *cb, void *data, off_t ofs, int length)
   memcpy (cb->data+ofs, data, length);
   release_exclusive (&cb->shared_lock);
 //  if (!cb->sector_no)
-//    cache_flush (); /* To be removed */
+//  cache_flush (); /* To be removed */
 }
 
 void 
