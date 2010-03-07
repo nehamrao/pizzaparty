@@ -483,8 +483,19 @@ init_thread (struct thread *t, const char *name, int priority, bool is_kernel)
   if (t != initial_thread)
     t->parent_thread = thread_current ();
 
+/*  if (t != initial_thread)
+  { 
+    if (thread_current ()-> current_dir != NULL)
+      t->current_dir = dir_reopen (thread_current ()->current_dir);
+    else 
+      t->current_dir = dir_open_root ();
+  }
+*/
   /* Initialize file arrays */
   memset (t->array_files, 0, sizeof *(t->array_files));
+
+  /* Initialize current dir as parent's current dir */
+
 
   list_init (&t->child_list);
   t->executable = NULL;
