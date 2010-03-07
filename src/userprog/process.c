@@ -20,6 +20,8 @@
 #include "threads/pte.h"
 #include "threads/malloc.h"
 
+#include "filesys/directory.h"
+
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 static bool argument_passing (const char *cmd_line, void **esp);
@@ -79,8 +81,15 @@ start_process (void *file_name_)
   success = load (file_name, &if_.eip, &if_.esp);
   struct thread* t = thread_current ();
   t->parent_thread->process_info->child_load_success = success;
+  
+ 
   sema_up (&t->parent_thread->process_info->sema_load);
   lock_release (&glb_lock_filesys);
+
+   if (t->parent_thread->current_dir != NULL)
+    t->current_dir = dir_reopen (t->parent_thread->current_dir);
+  else
+    t->current_dir = dir_open_root();
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
@@ -293,8 +302,11 @@ load (const char *cmd_line, void (**eip) (void), void **esp)
   char prog_file_name[16];
   get_prog_file_name (cmd_line, prog_file_name);
 
+
+ 
   /* Open executable file. */
   file = filesys_open (prog_file_name);
+ 
 
   if (file == NULL) 
     {

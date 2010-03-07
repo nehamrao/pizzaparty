@@ -21,16 +21,18 @@
    Must be exactly BLOCK_SECTOR_SIZE bytes long. */
 struct inode_disk
   {
-    off_t length;                       /* File size in bytes. */
+    off_t length;                       /* File size in bytes. */   
     off_t end;                          /* End of the portion of file
                                            actually written in bytes. */
+    off_t isdir;
     unsigned magic;                     /* Magic number. */
 
     block_sector_t blocks[NUM_DBLOCK + 2];
                                         /* Direct blocks and 2 more for 
                                            single, double indirect blocks */
+    
 
-    uint32_t unused[123 - NUM_DBLOCK]; /* Not used. */
+    uint32_t unused[122 - NUM_DBLOCK]; /* Not used. */
   };
 
 /* Returns the number of sectors to allocate for an inode SIZE
@@ -298,6 +300,10 @@ expand_inode (const struct inode* inode, off_t pos)
   if (meta_block->length < meta_block->end)
     meta_block->length = meta_block->end;
 
+
+  /*       To be implemented for dir */
+  meta_block->isdir = 0;
+
   /* Write the updated inode info back to disk */
   cache_write (cache_get (inode->sector), meta_block, 0 , BLOCK_SECTOR_SIZE);
 
@@ -428,7 +434,7 @@ inode_init (void)
    Returns true if successful.
    Returns false if memory or disk allocation fails. */
 bool
-inode_create (block_sector_t sector, off_t length)
+inode_create (block_sector_t sector, off_t length, off_t isdir)
 {
   struct inode_disk *disk_inode = NULL;
   bool success = false;
@@ -449,6 +455,7 @@ inode_create (block_sector_t sector, off_t length)
       disk_inode->length = length;
       disk_inode->end = -1;
       disk_inode->magic = INODE_MAGIC;
+      disk_inode->isdir = isdir;
       cache_write (cache_get (sector), disk_inode, 0, BLOCK_SECTOR_SIZE);
       success = true;
       free (disk_inode);
@@ -755,3 +762,31 @@ inode_length (const struct inode *inode)
 
   return result_length;
 }
+
+off_t 
+inode_isdir (const struct inode *inode)
+{
+  struct inode_disk* meta_block = calloc (1, BLOCK_SECTOR_SIZE);
+  if (meta_block == NULL)
+    return -1;
+  cache_read (cache_get (inode->sector), meta_block,
+              0, BLOCK_SECTOR_SIZE);
+  
+  if (meta_block == NULL)
+  return 0;
+
+  off_t result_isdir = meta_block->isdir;
+
+  free (meta_block);
+
+  return result_isdir;
+
+}
+
+
+
+
+
+
+
+

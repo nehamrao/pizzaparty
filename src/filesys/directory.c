@@ -5,6 +5,7 @@
 #include "filesys/filesys.h"
 #include "filesys/inode.h"
 #include "threads/malloc.h"
+#include "filesys/cache.h"
 
 /* A directory. */
 struct dir 
@@ -24,9 +25,20 @@ struct dir_entry
 /* Creates a directory with space for ENTRY_CNT entries in the
    given SECTOR.  Returns true if successful, false on failure. */
 bool
-dir_create (block_sector_t sector, size_t entry_cnt)
+dir_create (block_sector_t sector, block_sector_t parent_sector, size_t entry_cnt)
 {
-  return inode_create (sector, entry_cnt * sizeof (struct dir_entry));
+  
+
+ if (inode_create (sector, entry_cnt * sizeof (struct dir_entry), 1))
+   {
+    struct dir *dir = dir_open (inode_open (sector));
+ //   dir_add (dir, ".", sector);
+ //   dir_add (dir, "..", parent_sector);
+    return true;
+   }
+
+ else 
+   return false;
 }
 
 /* Opens and returns the directory for the given INODE, of which
@@ -97,6 +109,7 @@ lookup (const struct dir *dir, const char *name,
   
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
+ 
 
   for (ofs = 0; inode_read_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
        ofs += sizeof e) 
@@ -123,12 +136,14 @@ dir_lookup (const struct dir *dir, const char *name,
 
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
+   
 
   if (lookup (dir, name, &e, NULL))
     *inode = inode_open (e.inode_sector);
   else
     *inode = NULL;
 
+  
   return *inode != NULL;
 }
 
@@ -152,11 +167,11 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
   if (*name == '\0' || strlen (name) > NAME_MAX)
     return false;
 
-
+//  printf ("%s\n",name);
   /* Check that NAME is not in use. */
   if (lookup (dir, name, NULL, NULL))
   {
-//    printf ("%s is already in %s\n", name, dir);
+ //   printf ("%s is already in %s\n", name, dir);
     goto done;
   }
   /* Set OFS to offset of free slot.
@@ -174,10 +189,16 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
   e.in_use = true;
   strlcpy (e.name, name, sizeof e.name);
   e.inode_sector = inode_sector;
+  
   success = inode_write_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
+//    success = cache_write (cache_get (dir->inode.sector),
+//                     (void*) &e,
+//                   0, 
+//                sizeof e);
 
  done:
-  return success;
+  return success; 
+   
 }
 
 /* Removes any entry for NAME in DIR.
@@ -236,3 +257,9 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
     }
   return false;
 }
+
+
+
+
+
+

@@ -104,6 +104,8 @@ struct thread
     struct file *executable;		/* Record current process's executable*/
     struct list child_list;		/* Record thread's children */
     struct process_info *process_info;  /* Process metadata */
+    struct dir *current_dir;
+  
 #endif
 
     /* Owned by thread.c. */
@@ -115,6 +117,7 @@ struct file_info
   {
     unsigned pos;                       /* position within file */
     struct file* p_file;                /* pointer to actual file structure */
+    struct dir* p_dir;
   };
 /* global lock on function call to filesys.h and file.h */
 struct lock glb_lock_filesys;
