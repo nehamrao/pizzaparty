@@ -315,7 +315,7 @@ load (const char *cmd_line, void (**eip) (void), void **esp)
     }
   
   /* Deny write to executable. */
-  file_deny_write (file);
+   file_deny_write (file);
 
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr

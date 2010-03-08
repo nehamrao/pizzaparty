@@ -539,14 +539,15 @@ _mkdir (const char *dir)
   opendir = dir_open_root ();
   else 
   opendir = t->current_dir;
-  
+ // printf ("%s\n", dir);
+ // printf ("%d\n", opendir->inode);
   token1 = strtok_r (dir, "/", &save_ptr);
 //  printf ("%s\n", token1);
   for (token2 = strtok_r (NULL, "/", &save_ptr); token2 != NULL; token2 = strtok_r (NULL, "/", &save_ptr) )
   {
 
      struct inode *inode = NULL;
-//    printf ("%s\n", token2);
+  //   printf ("token1: %s\n", token1);
     success = dir_lookup (opendir, token1, &inode);
      
       if (!success)
@@ -568,16 +569,26 @@ _mkdir (const char *dir)
       if (token1 != NULL) 
       { 
       strlcpy (temp, token1, sizeof temp); 
-     
+  //    printf ("%s\n", temp);
+     // printf ("%d\n", opendir->inode);
       block_sector_t inode_sector = 0;
-      success = (t->current_dir != NULL
+      success = (opendir != NULL
                           && free_map_allocate (1, &inode_sector)
                           && dir_create (inode_sector, inode_get_inumber (dir_get_inode (opendir)),16)
                           && dir_add (opendir, temp, inode_sector));
+ //     printf ("success = %ld, inode_sector = %ld\n", success, inode_sector);
+         if (!success && inode_sector != 0)
+         free_map_release (inode_sector, 1);
       }
-      else 
-         success = false;
-
+      else
+      {
+        success = false;
+      }
+       
+      
+         
+         
+     
     }
 
   return success;

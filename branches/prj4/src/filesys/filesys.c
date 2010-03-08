@@ -62,7 +62,7 @@ filesys_create (const char *name, off_t initial_size)
   if (strlen(name)> NAME_MAX)
   return false;
   char *token1, *token2, *save_ptr, temp[NAME_MAX + 1];
-  
+  struct inode *inode = NULL;
   bool success = true;
   
   if (file_name != NULL)
@@ -72,7 +72,7 @@ filesys_create (const char *name, off_t initial_size)
     for (token2 = strtok_r (NULL, "/", &save_ptr); token2 != NULL; token2 = strtok_r (NULL, "/", &save_ptr))
    {
  //   printf ("%s\n", token2);
-    struct inode *inode = NULL;
+    
     strlcpy (temp, token1, sizeof temp);
     success = dir_lookup (dir, temp, &inode);
      
@@ -98,12 +98,10 @@ filesys_create (const char *name, off_t initial_size)
    strlcpy (temp, token1, sizeof temp);
   if (success)
   success = (dir != NULL
-                  && free_map_allocate (1, &inode_sector)
+                  && free_map_allocate (1, &inode_sector) 
                   && inode_create (inode_sector, initial_size, 0)
                   && dir_add (dir, temp, inode_sector));
-
-
-
+//  printf ("success = %ld, inode_sector = %ld\n", success, inode_sector);
 
   if (!success && inode_sector != 0) 
   {
