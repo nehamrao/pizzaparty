@@ -153,20 +153,20 @@ syscall_handler (struct intr_frame *f)
         break;
 
       case SYS_READDIR:
-       arg1 = read_stack (f, 4);
-       arg2 = read_stack (f, 8);
-       f->eax = (uint32_t) _readdir ((int)arg1, (char)arg2);
-       break;
+        arg1 = read_stack (f, 4);
+        arg2 = read_stack (f, 8);
+        f->eax = (uint32_t) _readdir ((int)arg1, (char)arg2);
+        break;
 
       case SYS_ISDIR:
-      arg1 = read_stack (f,4);
-      f->eax = (uint32_t)_is_dir ((int)arg1);
-      break;
+        arg1 = read_stack (f, 4);
+        f->eax = (uint32_t)_is_dir ((int)arg1);
+        break;
 
       case SYS_INUMBER:
-      arg1 = read_stack (f,4);
-      f->eax = (block_sector_t) _inumber ((int)arg1);
-      break;
+        arg1 = read_stack (f, 4);
+        f->eax = (block_sector_t) _inumber ((int)arg1);
+        break;
 
       default:
         kill_process ();    
@@ -223,13 +223,17 @@ _wait (pid_t pid)
 static bool
 _create (const char *file, unsigned initial_size)
 {
+  /* check valid input */
+  if (file == NULL || strlen(file) ==0)
+    {
+      return false;
+    }
+
   /* check address */
   if (!checkvaddr (file, 0) || !checkvaddr (file, strlen(file)))
     {
       kill_process();
     }
-  if (file == NULL || strlen(file) ==0 )
-  return false;
 
   /* protected filesys operation: create file */
   lock_acquire (&glb_lock_filesys);
@@ -259,39 +263,38 @@ _remove (const char *file)
 static int
 _open (const char *file)
 {
+  /* check valid input */
+  if (file == NULL || strlen(file) ==0)
+    {
+      return -1;
+    }
+
   /* check address */
   if (!checkvaddr (file, 0) || !checkvaddr (file, strlen(file)))
     {
       kill_process();
     }
-   if (file == NULL || strlen(file) ==0 )
-   return -1;
-
-
-   struct file_info* f_info;
- 
-
+   
   /* protected filesys operation: open file */
   lock_acquire (&glb_lock_filesys);
-  f_info = filesys_open_file (file);
+  struct file_info* f_info = filesys_open_file (file);
   lock_release (&glb_lock_filesys);
 
   /* If open fails, return -1 */
   if (f_info == NULL)
-    return -1;
+    {
+      return -1;
+    }
+
+  /* Ensure valid f_info content */
   if (f_info->p_file == NULL && f_info->p_dir == NULL)
     {
       return -1;
     }
 
-  /* Initialize file_info structure */
- 
 
   /* for f_info: initial position */
   f_info->pos = 0;
-
-  /* for f_info: record pointer to file structure */
-//  f_info->p_file = f_struct;
 
   /* for f_info: allocate file descriptor, add to array_files */
   struct thread* t = thread_current ();
@@ -380,18 +383,17 @@ _write (int fd, const void *buffer, unsigned size)
   else                          /* Write to file */
     {
       struct thread* t = thread_current();
-      struct file * pf;
+      struct file* pf;
       /* Get file info*/
       struct file_info* info_f = t->array_files[fd];
-
       if (info_f->p_file != NULL)
-      {
-         pf = info_f->p_file;
-      }
+        {
+          pf = info_f->p_file;
+        }
       else
-      { 
-        return -1;
-      }
+        { 
+          return -1;
+        }
       unsigned file_offset = t->array_files[fd]->pos;
 
       /* Protect filesys operation:
@@ -399,7 +401,6 @@ _write (int fd, const void *buffer, unsigned size)
       lock_acquire (&glb_lock_filesys);
       result = file_write_at (pf, buffer, size, file_offset);
 
-      
       /* Increment position within file for current thread */
       t->array_files[fd]->pos += result;
       lock_release (&glb_lock_filesys);
@@ -461,9 +462,6 @@ _close (int fd)
   lock_release (&glb_lock_filesys);
 }
 
-
-
-
 static bool
 _is_dir (int fd)
 {
@@ -477,7 +475,6 @@ _is_dir (int fd)
   struct file_info * file_info = t->array_files[fd];
 
   return ((file_info->p_file == NULL) && (file_info->p_dir != NULL));
-  
 } 
 
 static block_sector_t
@@ -488,19 +485,16 @@ _inumber (int fd)
   struct file_info * file_info = t->array_files[fd];
   
   if (file_info == NULL)
-  {
-    PANIC ("File info empty!\n");
-  }
+    {
+      PANIC ("File info empty!\n");
+    }
 
   if (file_info->p_file != NULL)
     return inode_get_inumber (file_get_inode (file_info->p_file));  
- 
   else if (file_info->p_dir != NULL)
     return inode_get_inumber (dir_get_inode (file_info->p_dir));  
-
   else 
     PANIC ("File and dir empty!\n");  
-
 }
 
 static bool
@@ -508,30 +502,27 @@ _chdir (const char *dir)
 {
   struct thread *t = thread_current ();
   char *token, *save_ptr;
-  struct inode * inode = NULL;
+  struct inode *inode = NULL;
   bool success = true;
    
-   if (dir[0] == '/')
+  if (dir[0] == '/')
     { 
-     t->current_dir = dir_open_root ();    
+      t->current_dir = dir_open_root ();    
     }
    
-   for (token = strtok_r (dir, "/", &save_ptr); token != NULL; token = strtok_r (NULL, "/", &save_ptr))
-   {
-   //  printf ("%s\n",token);
-     if(!dir_lookup (t->current_dir, token, &inode))
-     {
-       success = false;
-       break;
-     }
-    
-         
-           dir_close(t->current_dir);
-           t->current_dir = dir_open (inode);   
-       
-   }
+  for (token = strtok_r (dir, "/", &save_ptr); token != NULL;
+       token = strtok_r (NULL, "/", &save_ptr))
+    {
+      if(!dir_lookup (t->current_dir, token, &inode))
+        {
+          success = false;
+          break;
+        }
+      dir_close(t->current_dir);
+      t->current_dir = dir_open (inode);   
+    }
 
-   return success;  
+  return success;  
 }
 
 static bool 
@@ -543,94 +534,88 @@ _mkdir (const char *dir)
 
   bool success = true;
   char temp[NAME_MAX + 1];
-  //  printf ("dir %s\n", dir);
+
   if (dir[0] == '/')
-  opendir = dir_open_root ();
+    opendir = dir_open_root ();
   else 
-  opendir = dir_reopen (t->current_dir);
+    opendir = dir_reopen (t->current_dir);
+
  // printf ("%s\n", dir);
  // printf ("%d\n", opendir->inode);
+
   token1 = strtok_r (dir, "/", &save_ptr);
-//  printf ("%s\n", token1);
-  for (token2 = strtok_r (NULL, "/", &save_ptr); token2 != NULL; token2 = strtok_r (NULL, "/", &save_ptr) )
-  {
-
-     struct inode *inode = NULL;
-  //   printf ("token1: %s\n", token1);
-    success = dir_lookup (opendir, token1, &inode);
-     
+  for (token2 = strtok_r (NULL, "/", &save_ptr); token2 != NULL;
+       token2 = strtok_r (NULL, "/", &save_ptr) )
+    {
+      struct inode *inode = NULL;
+      success = dir_lookup (opendir, token1, &inode);
       if (!success)
-     {
-       break;
-     }
-     else 
-       {   
-           dir_close (opendir);
-           opendir = dir_open (inode);   
-       }
+        {
+          break;
+        }
+      else 
+        {   
+          dir_close (opendir);
+          opendir = dir_open (inode);   
+        }
 
-    token1 = token2;
-  }
-  
+      token1 = token2;
+    }
  
  //  printf ("%s\n", token1);
+
   if (success)
     {
       if (token1 != NULL) 
-      { 
-      strlcpy (temp, token1, sizeof temp); 
-    //  printf ("token 1: %s\n", temp);
-    
-     // printf ("%d\n", opendir->inode);
-      block_sector_t inode_sector = 0;
-      success = (opendir != NULL
-                          && free_map_allocate (1, &inode_sector)
-                          && dir_create (inode_sector, inode_get_inumber (dir_get_inode (opendir)),20)                     
-                          && dir_add (opendir, temp, inode_sector));
-      
+        {
+          strlcpy (temp, token1, sizeof temp);
+          
+          block_sector_t inode_sector = 0;
+          
+          success = (opendir != NULL
+                     && free_map_allocate (1, &inode_sector)
+                     && dir_create (inode_sector,
+                          inode_get_inumber (dir_get_inode (opendir)),20)
+                     && dir_add (opendir, temp, inode_sector));
+
    //   printf ("success = %ld, mkdir inode_sector = %ld\n", success, inode_sector);
+
          if (!success && inode_sector != 0)
          free_map_release (inode_sector, 1);
-      }
+        }
       else
-      {
-        success = false;
-      }
-       
-      
-         
-         
-     
+        {
+          success = false;
+        }
     }
 
   return success;
-
 }
 
 
 static bool
 _readdir (int fd, char *name)
 {
-  
-
   /* Lookup up file descriptor. */
   if (fd != STDOUT_FILENO && fd != STDIN_FILENO)
     {
- 
       struct thread *t = thread_current ();
-       if (t->array_files[fd]->p_dir == NULL)
-        return false;    
-       else 
-      {
-        struct dir *dir = t->array_files[fd]->p_dir;
-        return dir_readdir(dir, name);
-      }
+
+      if (t->array_files[fd]->p_dir == NULL)
+        {
+          return false;    
+        }
+      else 
+        {
+          struct dir *dir = t->array_files[fd]->p_dir;
+          return dir_readdir(dir, name);
+        }
     }
   else
-    return false;
+    {
+      return false;
+    }
 }
-
-
 
 /* Utility functions */
 
