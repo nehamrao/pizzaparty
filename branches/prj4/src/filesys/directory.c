@@ -27,21 +27,18 @@ struct dir_entry
 bool
 dir_create (block_sector_t sector, block_sector_t parent_sector, size_t entry_cnt)
 {
-  
-
- if (inode_create (sector, entry_cnt * sizeof (struct dir_entry), (off_t) 1))
-   {
-    struct dir *dir = dir_open (inode_open (sector));
-   dir_add (dir, ".", sector);
-    dir_add (dir, "..", parent_sector);
-    if (sector == ROOT_DIR_SECTOR)
-    dir_add (dir, "/", sector);
-   
-    return true;
-   }
-
- else 
-   return false;
+  if (inode_create (sector, entry_cnt * sizeof (struct dir_entry), (off_t) 1))
+    {
+      struct dir *dir = dir_open (inode_open (sector));
+      dir_add (dir, ".", sector);
+      dir_add (dir, "..", parent_sector);
+      if (sector == ROOT_DIR_SECTOR)
+        dir_add (dir, "/", sector);
+      
+      return true;
+    }
+  else
+    return false;
 }
 
 /* Opens and returns the directory for the given INODE, of which
@@ -113,11 +110,8 @@ lookup (const struct dir *dir, const char *name,
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
  
-
   for (ofs = 0; inode_read_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
        ofs += sizeof e) 
-  { 
- //  printf (" e.name name :%s %s", e.name, name);
     if (e.in_use && !strcmp (name, e.name)) 
       {
         if (ep != NULL)
@@ -126,7 +120,6 @@ lookup (const struct dir *dir, const char *name,
           *ofsp = ofs;
         return true;
       }
-   }
   return false;
 }
 
@@ -142,14 +135,12 @@ dir_lookup (const struct dir *dir, const char *name,
 
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
-   
 
   if (lookup (dir, name, &e, NULL))
     *inode = inode_open (e.inode_sector);
   else
     *inode = NULL;
 
-  
   return *inode != NULL;
 }
 
@@ -165,25 +156,20 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
   struct dir_entry e;
   off_t ofs;
   bool success = false;
- // printf (" Fuck 5 %s\n",name);
+
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
 
   /* Check NAME for validity. */
   if (*name == '\0' || strlen (name) > NAME_MAX)
-  {
-//    printf (" Fuck 3 %s\n", name);
     return false;
-  } 
-//  printf ("%s\n",name);
+
   /* Check that NAME is not in use. */
   if (lookup (dir, name, NULL, NULL))
   { 
-//    printf (" Fuck 1\n");
- //   printf ("%s is already in %s\n", name, dir);
     goto done;
   }
-//  printf (" Fuck 4\n");
+
   /* Set OFS to offset of free slot.
      If there are no free slots, then it will be set to the
      current end-of-file.
@@ -195,22 +181,15 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
        ofs += sizeof e) 
     if (!e.in_use)
       break;
+
   /* Write slot. */
   e.in_use = true;
   strlcpy (e.name, name, sizeof e.name);
   e.inode_sector = inode_sector;
-  
- //   printf (" Fuck 2\n");
-  
   success = inode_write_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
-//    success = cache_write (cache_get (dir->inode.sector),
-//                     (void*) &e,
-//                   0, 
-//                sizeof e);
 
  done:
   return success; 
-   
 }
 
 /* Removes any entry for NAME in DIR.
@@ -226,9 +205,11 @@ dir_remove (struct dir *dir, const char *name)
 
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
-  
+
+  /* Protect root directory */
   if (strcmp (name, "/") == 0)
     goto done;
+
   /* Find directory entry. */
   if (!lookup (dir, name, &e, &ofs))
     goto done;
@@ -237,8 +218,11 @@ dir_remove (struct dir *dir, const char *name)
   inode = inode_open (e.inode_sector);
   if (inode == NULL)
     goto done;
+
+  /* Protect directory in use */
   if (inode_isopen (inode)&&inode_isdir (inode))
     goto done;
+
   /* Erase directory entry. */
   e.in_use = false;
   if (inode_write_at (dir->inode, &e, sizeof e, ofs) != sizeof e) 
@@ -272,9 +256,3 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
     }
   return false;
 }
-
-
-
-
-
-
