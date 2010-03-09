@@ -20,6 +20,7 @@ void inode_deny_write (struct inode *);
 void inode_allow_write (struct inode *);
 off_t inode_length (const struct inode *);
 off_t inode_isdir (const struct inode *);
+bool inode_isopen (const struct inode * inode);
 /* For dubugging, restore to static later */
 bool expand_inode (const struct inode* inode, off_t pos);
 block_sector_t allocate_indirect_sector (block_sector_t* block_content, int range);

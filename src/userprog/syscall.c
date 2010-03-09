@@ -264,8 +264,12 @@ _open (const char *file)
     {
       kill_process();
     }
+   if (file == NULL || strlen(file) ==0 )
+   return -1;
+
 
    struct file_info* f_info;
+ 
 
   /* protected filesys operation: open file */
   lock_acquire (&glb_lock_filesys);
@@ -506,7 +510,12 @@ _chdir (const char *dir)
   char *token, *save_ptr;
   struct inode * inode = NULL;
   bool success = true;
-  
+   
+   if (dir[0] == '/')
+    { 
+     t->current_dir = dir_open_root ();    
+    }
+   
    for (token = strtok_r (dir, "/", &save_ptr); token != NULL; token = strtok_r (NULL, "/", &save_ptr))
    {
    //  printf ("%s\n",token);
@@ -534,11 +543,11 @@ _mkdir (const char *dir)
 
   bool success = true;
   char temp[NAME_MAX + 1];
-  
+  //  printf ("dir %s\n", dir);
   if (dir[0] == '/')
   opendir = dir_open_root ();
   else 
-  opendir = t->current_dir;
+  opendir = dir_reopen (t->current_dir);
  // printf ("%s\n", dir);
  // printf ("%d\n", opendir->inode);
   token1 = strtok_r (dir, "/", &save_ptr);
@@ -563,20 +572,23 @@ _mkdir (const char *dir)
     token1 = token2;
   }
   
-//  printf ("%s\n", token1);
+ 
+ //  printf ("%s\n", token1);
   if (success)
     {
       if (token1 != NULL) 
       { 
       strlcpy (temp, token1, sizeof temp); 
-  //    printf ("%s\n", temp);
+    //  printf ("token 1: %s\n", temp);
+    
      // printf ("%d\n", opendir->inode);
       block_sector_t inode_sector = 0;
       success = (opendir != NULL
                           && free_map_allocate (1, &inode_sector)
-                          && dir_create (inode_sector, inode_get_inumber (dir_get_inode (opendir)),16)
+                          && dir_create (inode_sector, inode_get_inumber (dir_get_inode (opendir)),20)                     
                           && dir_add (opendir, temp, inode_sector));
- //     printf ("success = %ld, inode_sector = %ld\n", success, inode_sector);
+      
+   //   printf ("success = %ld, mkdir inode_sector = %ld\n", success, inode_sector);
          if (!success && inode_sector != 0)
          free_map_release (inode_sector, 1);
       }
