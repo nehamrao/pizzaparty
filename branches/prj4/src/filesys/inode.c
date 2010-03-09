@@ -703,7 +703,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   if (inode == NULL)
   {
     //printf (" inode is null\n");
-   return 0;
+    return 0;
   }
    
   while (size > 0) 
@@ -713,8 +713,8 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 
       /* Bytes left in inode, bytes left in sector, lesser of the two. */
-    // printf ("inode_lenght %d sector %d offset %d\n", inode_length(inode), inode->sector, offset);
-      off_t inode_left = inode_length (inode) - offset;
+      //off_t inode_left = inode_length (inode) - offset;
+      off_t inode_left = BLOCK_SECTOR_SIZE;
       int sector_left = BLOCK_SECTOR_SIZE - sector_ofs;
       int min_left = inode_left < sector_left ? inode_left : sector_left;
 
@@ -734,8 +734,22 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       offset += chunk_size;
       bytes_written += chunk_size;
     }
-  //free (bounce);
- // printf ("bytes_written = %ld\n", bytes_written);
+
+  /* Update inode length */
+  struct inode_disk* meta_block = calloc (1, BLOCK_SECTOR_SIZE);
+  if (meta_block == NULL)
+    return -1;
+
+  cache_read (cache_get (inode->sector), meta_block,
+              0, BLOCK_SECTOR_SIZE);
+  meta_block->length = meta_block->length > offset + size ?
+                       meta_block->length : offset + size;
+  cache_write (cache_get (inode->sector), meta_block,
+               0, BLOCK_SECTOR_SIZE);
+
+  free (meta_block);
+
+
   return bytes_written;
 }
 
@@ -767,9 +781,10 @@ inode_length (const struct inode *inode)
   struct inode_disk* meta_block = calloc (1, BLOCK_SECTOR_SIZE);
   if (meta_block == NULL)
     return -1;
+
   cache_read (cache_get (inode->sector), meta_block,
               0, BLOCK_SECTOR_SIZE);
- // printf ("inode_length() inode->sector %d length %d\n", inode->sector, meta_block->length);
+
   off_t result_length = meta_block->length;
 
   free (meta_block);
@@ -802,8 +817,4 @@ inode_isopen (const struct inode * inode)
 {
   return inode->open_cnt; 
 }
-
-
-
-
 
