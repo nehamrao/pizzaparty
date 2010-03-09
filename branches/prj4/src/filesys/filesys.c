@@ -59,12 +59,13 @@ filesys_create (const char *name, off_t initial_size)
 //  success = success && dir_add (dir, name, inode_sector);
 //  printf ("dir done\n");
 
-  if (strlen(name)> NAME_MAX)
-  return false;
-  char *token1, *token2, *save_ptr, temp[NAME_MAX + 1];
+  
+  char *token1, *token2, *save_ptr;
+  //char temp[NAME_MAX + 1];
   struct inode *inode = NULL;
   bool success = true;
-  
+   
+//  printf (" Tick 1\n");
   if (file_name != NULL)
   {
   token1 = strtok_r (file_name, "/", &save_ptr);
@@ -73,11 +74,12 @@ filesys_create (const char *name, off_t initial_size)
    {
  //   printf ("%s\n", token2);
     
-    strlcpy (temp, token1, sizeof temp);
-    success = dir_lookup (dir, temp, &inode);
+ //   strlcpy (temp, token1, sizeof temp);
+    success = dir_lookup (dir, token1, &inode);
      
      if (!success)
      {
+ //    printf (" Tick 3\n");
     break;
        
      }
@@ -92,23 +94,36 @@ filesys_create (const char *name, off_t initial_size)
     }
   }
   
+  if (strlen(token1)> NAME_MAX)
+  return false; 
   
   if (dir == NULL)
   dir = dir_open_root ();
-   strlcpy (temp, token1, sizeof temp);
+ 
+ //  strlcpy (temp, token1, sizeof temp);
+  bool success1, success2, success3;
   if (success)
-  success = (dir != NULL
-                  && free_map_allocate (1, &inode_sector) 
+  {
+  success1 = free_map_allocate (1, &inode_sector);
+  success2 = inode_create (inode_sector, initial_size, 0);
+  success3 = dir_add (dir, token1, inode_sector);
+//  printf ("success %d %d %d \n", success1, success2, success3);
+  success = (dir != NULL && success1 && success2 && success3);
+                /*  && free_map_allocate (1, &inode_sector) 
                   && inode_create (inode_sector, initial_size, 0)
-                  && dir_add (dir, temp, inode_sector));
-//  printf ("success = %ld, inode_sector = %ld\n", success, inode_sector);
-
+                  && dir_add (dir, token1, inode_sector));*/
+//  printf ("success = %ld, filecreate inode_sector = %ld\n", success, inode_sector);
+   }
   if (!success && inode_sector != 0) 
   {
 //    printf ("success = %ld, inode_sector = %ld\n", success, inode_sector);
+//    printf (" Tick 2\n");
     free_map_release (inode_sector, 1);
   }
   dir_close (dir);
+  
+  if (file_name != NULL)
+   free (file_name);
 
   return success;
 }
@@ -139,19 +154,39 @@ filesys_open_file (const char *name)
   struct thread *t = thread_current ();
   struct dir *dir; 
   struct inode *inode = NULL;
+  char *token1, *save_ptr;
   struct file_info * f_info = (struct file_info *) malloc (sizeof (struct file_info));
+ //  char temp[NAME_MAX + 1];
+ //  strlcpy (temp, name, sizeof temp);
+    if (name[0] == '/')
+   { 
+   dir = dir_open_root ();
+     
+   }
+    else
+   dir = dir_reopen(t->current_dir);
 
-  if (t->current_dir != NULL)
-    dir = dir_reopen(t->current_dir);
   if (dir == NULL)
   {
     dir = dir_open_root ();
   }
 
+  
+
   if (dir != NULL)
-    dir_lookup (dir, name, &inode);
-    dir_close (dir);
+   { 
+      token1 = strtok_r (name, "/", &save_ptr);
+       
+       if (token1 == NULL)
+         inode = inode_open (ROOT_DIR_SECTOR);
+       else 
+         dir_lookup (dir, token1, &inode);
+       
+     dir_close (dir);
+   }
+  
    
+ 
     if (inode == NULL)
     {
      return NULL;
@@ -167,6 +202,7 @@ filesys_open_file (const char *name)
     else
     {
        f_info->p_file = file_open (inode);
+       f_info->p_dir = NULL; 
     }
     return f_info;
 
@@ -197,7 +233,7 @@ do_format (void)
 {
   printf ("Formatting file system...");
   free_map_create ();
-  if (!dir_create (ROOT_DIR_SECTOR, ROOT_DIR_SECTOR, 16))
+  if (!dir_create (ROOT_DIR_SECTOR, ROOT_DIR_SECTOR, 20))
     PANIC ("root directory creation failed");
   free_map_close ();
   printf ("done.\n");

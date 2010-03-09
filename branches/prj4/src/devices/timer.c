@@ -173,8 +173,11 @@ timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
   if ((ticks % FLUSH_PERIOD == 0) && (cache_initialized))
-    cache_flush ();
-  thread_tick ();
+  {
+    printf (" life is a flush\n");
+ //    cache_flush ();
+  }
+    thread_tick ();
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer

@@ -3,7 +3,7 @@
 #include "threads/synch.h"
 #include "devices/block.h"
 
-#define FLUSH_PERIOD 1000000
+#define FLUSH_PERIOD 10000000
 
 extern bool cache_initialized;
 

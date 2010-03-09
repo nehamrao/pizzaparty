@@ -298,8 +298,11 @@ expand_inode (const struct inode* inode, off_t pos)
 
   /* Update length if end exceed previous file length */
   if (meta_block->length < meta_block->end)
-    meta_block->length = meta_block->end;
+   {
 
+//    printf ("expand length %d\n", meta_block->length);
+    meta_block->length = meta_block->end;
+   }
 
   /*       To be implemented for dir */
   meta_block->isdir = 0;
@@ -452,6 +455,7 @@ inode_create (block_sector_t sector, off_t length, off_t isdir)
       /* Write only the metadata block
          and actual end of the file is initalized to 0
          other blocks are only write when later writes are past end */
+    //  printf ("inode create length %d \n", length);
       disk_inode->length = length;
       disk_inode->end = -1;
       disk_inode->magic = INODE_MAGIC;
@@ -692,10 +696,16 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
 
   if (inode->deny_write_cnt)
   {
-//    printf ("DENY write **************\n");
+ //   printf ("DENY write **************\n");
     return 0;
   }
 
+  if (inode == NULL)
+  {
+    //printf (" inode is null\n");
+   return 0;
+  }
+   
   while (size > 0) 
     {
       /* Sector to write, starting byte offset within sector. */
@@ -703,15 +713,19 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 
       /* Bytes left in inode, bytes left in sector, lesser of the two. */
+    // printf ("inode_lenght %d sector %d offset %d\n", inode_length(inode), inode->sector, offset);
       off_t inode_left = inode_length (inode) - offset;
       int sector_left = BLOCK_SECTOR_SIZE - sector_ofs;
       int min_left = inode_left < sector_left ? inode_left : sector_left;
 
       /* Number of bytes to actually write into this sector. */
       int chunk_size = size < min_left ? size : min_left;
+     // printf ("ofs %d, size %d, sector_left %d, min_left %d\n", sector_ofs, size, sector_left, min_left);
       if (chunk_size <= 0)
+      {
+      //  printf (" chunk size minus\n");
         break;
-
+      }
       cache_write (cache_get (sector_idx), (uint8_t *)buffer + bytes_written,
                    sector_ofs, chunk_size);
 
@@ -721,7 +735,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       bytes_written += chunk_size;
     }
   //free (bounce);
-//  printf ("bytes_written = %ld\n", bytes_written);
+ // printf ("bytes_written = %ld\n", bytes_written);
   return bytes_written;
 }
 
@@ -755,7 +769,7 @@ inode_length (const struct inode *inode)
     return -1;
   cache_read (cache_get (inode->sector), meta_block,
               0, BLOCK_SECTOR_SIZE);
-  
+ // printf ("inode_length() inode->sector %d length %d\n", inode->sector, meta_block->length);
   off_t result_length = meta_block->length;
 
   free (meta_block);
@@ -783,8 +797,11 @@ inode_isdir (const struct inode *inode)
 
 }
 
-
-
+bool 
+inode_isopen (const struct inode * inode)
+{
+  return inode->open_cnt; 
+}
 
 
 

@@ -70,7 +70,7 @@ cache_get (block_sector_t sector_no)
 
   if ((idx == -1) && (victim != -1))
   {
-//    printf ("Evict no: %ld\n", victim);
+ //   printf ("Evict no: %ld\n", victim);
     /* Eviction process begins */
     if (cache_block[victim].dirty)
     {
@@ -101,7 +101,7 @@ void
 cache_read ( struct cache_block *cb, void *data, off_t ofs, int length)
 {
 //  printf ("************** Cache READ!!!!!!!!!!!!!!!!!!!!!! %ld \n", cb->sector_no);
-  acquire_shared (&cb->shared_lock);
+//  acquire_shared (&cb->shared_lock);
   if (!cb->present)
   {
 //    printf ("read %ld block from disk\n", cb->sector_no);
@@ -110,17 +110,20 @@ cache_read ( struct cache_block *cb, void *data, off_t ofs, int length)
   }
   memcpy ( data, cb->data + ofs, length);
   /* Read ahead to be implemented here ****************/
-  release_shared (&cb->shared_lock);
+//  release_shared (&cb->shared_lock);
 }
 
 void 
 cache_write ( struct cache_block *cb, void *data, off_t ofs, int length)
 {
 //  printf ("************** Cache Write!!!!!!!!!!!!!!!!!!!!!! %ld \n", cb->sector_no);
-  acquire_exclusive (&cb->shared_lock);
+   acquire_exclusive (&cb->shared_lock);
   cb->dirty = blkcmp (cb->data+ofs, data, length);
+  cb->dirty =1;
   cb->present = true;
   memcpy (cb->data+ofs, data, length);
+
+//  block_write (fs_device, cb->sector_no, cb->data);
   release_exclusive (&cb->shared_lock);
 //  if (!cb->sector_no)
 //  cache_flush (); /* To be removed */
