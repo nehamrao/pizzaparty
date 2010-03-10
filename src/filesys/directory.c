@@ -27,28 +27,25 @@ struct dir_entry
 bool
 dir_create (block_sector_t sector, block_sector_t parent_sector, size_t entry_cnt)
 {
-  
-
- if (inode_create (sector, entry_cnt * sizeof (struct dir_entry), (off_t) 1))
-   {
-     struct dir *dir = dir_open (inode_open (sector));
-     if (!dir_add (dir, ".", sector))
-     {
+  if (inode_create (sector, entry_cnt * sizeof (struct dir_entry), (off_t) 1))
+    {
+      struct dir *dir = dir_open (inode_open (sector));
+      if (!dir_add (dir, ".", sector))
+      {
 //       printf ("Creating . fails\n");
-       return true;
-     }
+        return true;
+      }
 
-     if (!dir_add (dir, "..", parent_sector))
-     {
+      if (!dir_add (dir, "..", parent_sector))
+      {
 //       printf ("Creating .. fails\n");
-       return true;
-     }
-     dir_close (dir);
-     return true;
-   }
-
- else 
-   return false;
+        return true;
+      }
+      dir_close (dir);
+      return true;
+    }
+  else 
+    return false;
 }
 
 /* Opens and returns the directory for the given INODE, of which
@@ -277,6 +274,8 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
       if (e.in_use)
         {
           strlcpy (name, e.name, NAME_MAX + 1);
+          if (!strcmp (".", e.name) || !strcmp ("..", e.name))
+            continue;
           return true;
         } 
     }

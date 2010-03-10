@@ -100,7 +100,8 @@ cache_get (block_sector_t sector_no)
 void 
 cache_read ( struct cache_block *cb, void *data, off_t ofs, int length)
 {
-//  printf ("************** Cache READ!!!!!!!!!!!!!!!!!!!!!! %ld \n", cb->sector_no);
+//  if (cb->sector_no == 105)
+//    printf ("************** Cache READ!!!!!!!!!!!!!!!!!!!!!! %ld \n", cb->sector_no);
 //  acquire_shared (&cb->shared_lock);
   if (!cb->present)
   {
@@ -116,8 +117,9 @@ cache_read ( struct cache_block *cb, void *data, off_t ofs, int length)
 void 
 cache_write ( struct cache_block *cb, void *data, off_t ofs, int length)
 {
-//  printf ("************** Cache Write!!!!!!!!!!!!!!!!!!!!!! %ld \n", cb->sector_no);
-   acquire_exclusive (&cb->shared_lock);
+//  if (cb->sector_no == 105)
+//    printf ("************** Cache Write!!!!!!!!!!!!!!!!!!!!!! %ld \n", cb->sector_no);
+  acquire_exclusive (&cb->shared_lock);
   cb->dirty = blkcmp (cb->data+ofs, data, length);
   cb->dirty =1;
   cb->present = true;

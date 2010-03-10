@@ -25,10 +25,10 @@ static pid_t _exec (const char *cmd_line);
 static int _wait (pid_t pid);
 static bool _create (const char *file, unsigned initial_size);
 static bool _remove (const char *file);
-static int _open (const char *file);
+//static int _open (const char *file);
 static int _filesize (int fd);
 static int _read (int fd, void *buffer, unsigned size);
-static int _write (int fd, const void *buffer, unsigned size);
+//static int _write (int fd, const void *buffer, unsigned size);
 static void _seek (int fd, unsigned position);
 static unsigned _tell (int fd);
 static void _close (int fd);
@@ -39,7 +39,7 @@ static bool _is_dir (int fd);
 static block_sector_t _inumber (int fd);
 static bool _chdir (const char *dir);
 //static bool _mkdir (const char *dir);
-static bool _readdir (int fd, char *name);
+//static bool _readdir (int fd, char *name);
 
 /* static methods providing utility functions to above methods */
 
@@ -155,7 +155,7 @@ syscall_handler (struct intr_frame *f)
       case SYS_READDIR:
        arg1 = read_stack (f, 4);
        arg2 = read_stack (f, 8);
-       f->eax = (uint32_t) _readdir ((int)arg1, (char)arg2);
+       f->eax = (uint32_t) _readdir ((int)arg1, (char *)arg2);
        break;
 
       case SYS_ISDIR:
@@ -256,7 +256,7 @@ _remove (const char *file)
   return success;
 }
 
-static int
+int
 _open (const char *file)
 {
   /* check address */
@@ -264,13 +264,11 @@ _open (const char *file)
     {
       kill_process();
     }
-   if (file == NULL || strlen(file) ==0 )
-   return -1;
-
+   if (file == NULL || strlen(file) == 0)
+     return -1;
 
    struct file_info* f_info;
  
-
   /* protected filesys operation: open file */
   lock_acquire (&glb_lock_filesys);
   f_info = filesys_open_file (file);
@@ -280,9 +278,7 @@ _open (const char *file)
   if (f_info == NULL)
     return -1;
   if (f_info->p_file == NULL && f_info->p_dir == NULL)
-    {
-      return -1;
-    }
+    return -1;
 
   /* Initialize file_info structure */
  
@@ -360,7 +356,7 @@ _read (int fd, void *buffer, unsigned size)
   return result;
 }
 
-static int
+int
 _write (int fd, const void *buffer, unsigned size)
 {
   /* Check address and file descriptor*/
@@ -607,7 +603,7 @@ _mkdir (const char *dir_)
 }
 
 
-static bool
+bool
 _readdir (int fd, char *name)
 {
     /* Lookup up file descriptor. */
@@ -620,7 +616,7 @@ _readdir (int fd, char *name)
       else 
       {
         struct dir *dir = t->array_files[fd]->p_dir;
-        return dir_readdir(dir, name);
+        return dir_readdir (dir, name);
       }
     }
   else
