@@ -132,7 +132,7 @@ filesys_open_file (const char *name_)
   struct thread *t = thread_current ();
   struct dir *dir; 
   struct inode *inode = NULL;
-  char *token1, *save_ptr;
+  char *token1, *token2, *save_ptr;
   struct file_info * f_info = (struct file_info *) malloc (sizeof (struct file_info));
   char name [strlen (name_) + 1];
   strlcpy (name, name_, strlen(name_)+1);
@@ -143,18 +143,33 @@ filesys_open_file (const char *name_)
     dir = dir_reopen(t->current_dir);
 
   token1 = strtok_r (name, "/", &save_ptr);
-       
-  if (token1 == NULL)
-    inode = inode_open (ROOT_DIR_SECTOR);
-  else 
-    dir_lookup (dir, token1, &inode);
-       
-  dir_close (dir);
 
-  if (inode == NULL)
+  bool success = true;
+
+  for (token2 = strtok_r (NULL, "/", &save_ptr); token2 != NULL; token2 = strtok_r (NULL, "/", &save_ptr))
   {
-    return NULL;
+    success = dir_lookup (dir, token1, &inode);
+    dir_close (dir);
+    if (!success) 
+      return NULL;     
+
+    dir = dir_open (inode);
+    token1 = token2;
   }
+
+  if (token1 == NULL)
+  {
+    inode = inode_open (ROOT_DIR_SECTOR);
+    if (inode == NULL)
+      return NULL;
+  }
+  else 
+  {
+    if (!dir_lookup (dir, token1, &inode))
+      return NULL;
+  }
+
+  dir_close (dir);
     
   off_t isdir = inode_isdir (inode);
 
