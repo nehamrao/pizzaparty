@@ -24,7 +24,7 @@ struct inode_disk
     off_t length;                       /* File size in bytes. */   
     off_t end;                          /* End of the portion of file
                                            actually written in bytes. */
-    off_t isdir;
+    bool isdir;
     unsigned magic;                     /* Magic number. */
 
     block_sector_t blocks[NUM_DBLOCK + 2];
@@ -433,7 +433,7 @@ inode_init (void)
    Returns true if successful.
    Returns false if memory or disk allocation fails. */
 bool
-inode_create (block_sector_t sector, off_t length, off_t isdir)
+inode_create (block_sector_t sector, off_t length, bool isdir)
 {
   struct inode_disk *disk_inode = NULL;
   bool success = false;
@@ -549,7 +549,15 @@ inode_close (struct inode *inode)
 
           int i = 0;
           int j = 0;
-          int end_pos = meta_block->end / BLOCK_SECTOR_SIZE;
+          cache_read (cache_get (inode->sector),
+                      meta_block, 0, BLOCK_SECTOR_SIZE);
+          
+          int end_pos;
+
+          if (meta_block->end < 0)
+            end_pos = -1;
+          else 
+            end_pos = meta_block->end / BLOCK_SECTOR_SIZE;
 
           /* Release direct nodes */
           for (i = 0; i < NUM_DBLOCK && i <= end_pos; i++)
@@ -784,7 +792,7 @@ inode_length (const struct inode *inode)
   return result_length;
 }
 
-off_t 
+bool
 inode_isdir (const struct inode *inode)
 {
   struct inode_disk* meta_block = calloc (1, BLOCK_SECTOR_SIZE);
@@ -794,7 +802,7 @@ inode_isdir (const struct inode *inode)
   cache_read (cache_get (inode->sector), meta_block,
               0, BLOCK_SECTOR_SIZE);
 
-  off_t result_isdir = meta_block->isdir;
+  bool result_isdir = meta_block->isdir;
 
   free (meta_block);
 
@@ -802,7 +810,7 @@ inode_isdir (const struct inode *inode)
 
 }
 
-bool 
+int
 inode_isopen (const struct inode * inode)
 {
   return inode->open_cnt; 

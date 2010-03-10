@@ -48,82 +48,60 @@ bool
 filesys_create (const char *name, off_t initial_size) 
 {
   block_sector_t inode_sector = 0;
-  struct dir *dir = dir_open_root ();
-  char *file_name = malloc (sizeof (char)*(strlen(name)+1));
-  strlcpy (file_name,name,strlen(name)+1);
-//  bool success = (dir != NULL
-//                  && free_map_allocate (1, &inode_sector));
-//  printf ("free_map_allocate done\n");
-//  success = success && inode_create (inode_sector, initial_size);
-//  printf ("inode_create done\n");
-//  success = success && dir_add (dir, name, inode_sector);
-//  printf ("dir done\n");
+  struct thread *t = thread_current ();
+  struct dir *dir;
+  if (name[0] == '/' || t->current_dir == NULL)
+    dir = dir_open_root ();
+  else
+    dir = dir_reopen (t->current_dir);
 
-  
+  char *file_name = malloc (strlen(name) + 1);
+  if (file_name == NULL)
+  {
+    dir_close (dir);
+    return false;
+  }
+  strlcpy (file_name, name, strlen(name) + 1);
+ 
   char *token1, *token2, *save_ptr;
-  //char temp[NAME_MAX + 1];
   struct inode *inode = NULL;
   bool success = true;
-   
-//  printf (" Tick 1\n");
-  if (file_name != NULL)
-  {
-  token1 = strtok_r (file_name, "/", &save_ptr);
- // printf ("%s\n", token1);
-    for (token2 = strtok_r (NULL, "/", &save_ptr); token2 != NULL; token2 = strtok_r (NULL, "/", &save_ptr))
-   {
- //   printf ("%s\n", token2);
-    
- //   strlcpy (temp, token1, sizeof temp);
-    success = dir_lookup (dir, token1, &inode);
-     
-     if (!success)
-     {
- //    printf (" Tick 3\n");
-    break;
-       
-     }
-     else 
-       {   
-           
-           dir_close (dir);
-           dir = dir_open (inode);   
-       }
 
-     token1 = token2;
-    }
+  token1 = strtok_r (file_name, "/", &save_ptr);
+  for (token2 = strtok_r (NULL, "/", &save_ptr); token2 != NULL; token2 = strtok_r (NULL, "/", &save_ptr))
+  {
+    success = dir_lookup (dir, token1, &inode);
+    dir_close (dir);
+    if (!success) 
+      return false;     
+
+    dir = dir_open (inode);
+    token1 = token2;
   }
-  
-  if (strlen(token1)> NAME_MAX)
-  return false; 
-  
-  if (dir == NULL)
-  dir = dir_open_root ();
  
- //  strlcpy (temp, token1, sizeof temp);
+  if (strlen (token1) > NAME_MAX)
+    return false; 
+ 
   bool success1, success2, success3;
   if (success)
   {
-  success1 = free_map_allocate (1, &inode_sector);
-  success2 = inode_create (inode_sector, initial_size, 0);
-  success3 = dir_add (dir, token1, inode_sector);
-//  printf ("success %d %d %d \n", success1, success2, success3);
-  success = (dir != NULL && success1 && success2 && success3);
+    success1 = free_map_allocate (1, &inode_sector);
+    success2 = inode_create (inode_sector, initial_size, false);
+    success3 = dir_add (dir, token1, inode_sector);
+//    printf ("success %d %d %d \n", success1, success2, success3);
+    success = (dir != NULL && success1 && success2 && success3);
                 /*  && free_map_allocate (1, &inode_sector) 
                   && inode_create (inode_sector, initial_size, 0)
                   && dir_add (dir, token1, inode_sector));*/
 //  printf ("success = %ld, filecreate inode_sector = %ld\n", success, inode_sector);
-   }
-  if (!success && inode_sector != 0) 
-  {
-//    printf ("success = %ld, inode_sector = %ld\n", success, inode_sector);
-//    printf (" Tick 2\n");
-    free_map_release (inode_sector, 1);
   }
+  if (!success && inode_sector != 0) 
+    free_map_release (inode_sector, 1);
+
   dir_close (dir);
-  
+ 
   if (file_name != NULL)
-   free (file_name);
+    free (file_name);
 
   return success;
 }
@@ -160,49 +138,37 @@ filesys_open_file (const char *name_)
   strlcpy (name, name_, strlen(name_)+1);
 
   if (name[0] == '/')
-    { 
-      dir = dir_open_root ();     
-    }
+    dir = dir_open_root ();     
   else
     dir = dir_reopen(t->current_dir);
 
-  if (dir == NULL)
+  token1 = strtok_r (name, "/", &save_ptr);
+       
+  if (token1 == NULL)
+    inode = inode_open (ROOT_DIR_SECTOR);
+  else 
+    dir_lookup (dir, token1, &inode);
+       
+  dir_close (dir);
+
+  if (inode == NULL)
   {
-    dir = dir_open_root ();
+    return NULL;
   }
-
-  if (dir != NULL)
-   { 
-     token1 = strtok_r (name, "/", &save_ptr);
-       
-     if (token1 == NULL)
-       inode = inode_open (ROOT_DIR_SECTOR);
-     else 
-       dir_lookup (dir, token1, &inode);
-       
-     dir_close (dir);
-   }
-  
-   
- 
-    if (inode == NULL)
-    {
-      return NULL;
-    }
     
-    off_t isdir = inode_isdir (inode);
+  off_t isdir = inode_isdir (inode);
 
-    if (isdir)
-    {
-       f_info->p_dir = dir_open (inode);
-       f_info->p_file = NULL;
-    }
-    else
-    {
-       f_info->p_file = file_open (inode);
-       f_info->p_dir = NULL; 
-    }
-    return f_info;
+  if (isdir)
+  {
+    f_info->p_dir = dir_open (inode);
+    f_info->p_file = NULL;
+  }
+  else
+  {
+    f_info->p_file = file_open (inode);
+    f_info->p_dir = NULL; 
+  }
+  return f_info;
 }
 
 /* Deletes the file named NAME.
@@ -213,17 +179,47 @@ bool
 filesys_remove (const char *name) 
 {
   struct thread * t = thread_current ();
-  struct dir *dir = dir_reopen (t->current_dir);
-  if (dir == NULL)
-  {
-    dir = dir_open_root ();
-  }
-  bool success = dir != NULL && dir_remove (dir, name);
-  dir_close (dir); 
+  struct dir *dir;
+  bool success = false;
 
+  if (name[0] == '/')
+    dir = dir_open_root ();     
+  else
+    dir = dir_reopen(t->current_dir);
+
+  char *token1, *token2, *save_ptr;  
+  char * file_name = malloc(strlen (name) + 1);
+  if (file_name == NULL)
+  {
+    dir_close (dir);
+    return false;    
+  }
+  strlcpy (file_name, name, strlen (name) + 1);
+
+  token1 = strtok_r (file_name, "/", &save_ptr);
+  for (token2 = strtok_r (NULL, "/", &save_ptr); token2 != NULL; token2 = strtok_r (NULL, "/", &save_ptr))
+  {
+    struct inode *inode = NULL;
+    success = dir_lookup (dir, token1, &inode);     
+    if (!success)
+    {
+      dir_close (dir);
+      return false;
+    }
+     
+    dir_close (dir);
+    dir = dir_open (inode);   
+    token1 = token2;
+  }
+  
+  if (token1 != NULL)
+    success = dir_remove (dir, token1);
+
+  dir_close (dir); 
   return success;
 }
 
+  
 /* Formats the file system. */
 static void
 do_format (void)

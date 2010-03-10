@@ -120,8 +120,7 @@ cache_write ( struct cache_block *cb, void *data, off_t ofs, int length)
 //  if (cb->sector_no == 105)
 //    printf ("************** Cache Write!!!!!!!!!!!!!!!!!!!!!! %ld \n", cb->sector_no);
   acquire_exclusive (&cb->shared_lock);
-  cb->dirty = blkcmp (cb->data+ofs, data, length);
-  cb->dirty =1;
+  cb->dirty = true;
   cb->present = true;
   memcpy (cb->data+ofs, data, length);
 

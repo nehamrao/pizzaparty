@@ -27,20 +27,12 @@ struct dir_entry
 bool
 dir_create (block_sector_t sector, block_sector_t parent_sector, size_t entry_cnt)
 {
-  if (inode_create (sector, entry_cnt * sizeof (struct dir_entry), (off_t) 1))
+  if (inode_create (sector, entry_cnt * sizeof (struct dir_entry), true))
     {
       struct dir *dir = dir_open (inode_open (sector));
-      if (!dir_add (dir, ".", sector))
-      {
-        return true;
-      }
-
-      if (!dir_add (dir, "..", parent_sector))
-      {
-        return true;
-      }
+      dir_add (dir, ".", sector);
+      dir_add (dir, "..", parent_sector);
       dir_close (dir);
-
       return true;
     }
   else 
@@ -164,7 +156,6 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
   struct dir_entry e;
   off_t ofs;
   bool success = false;
- // printf (" Fuck 5 %s\n",name);
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
 
@@ -208,10 +199,10 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
 bool
 dir_remove (struct dir *dir, const char *name) 
 {
-  struct dir_entry e;
+  struct dir_entry e, ee;
   struct inode *inode = NULL;
-  bool success = false;
-  off_t ofs;
+  bool success = false, isempty;
+  off_t ofs, ofs1;
 
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
@@ -229,14 +220,36 @@ dir_remove (struct dir *dir, const char *name)
   if (inode == NULL)
     goto done;
 
+  bool isdir = inode_isdir (inode);
+
   /* Protect directory in use */
-  if (inode_isopen (inode)&&inode_isdir (inode))
+  if ( (inode_isopen (inode) > 1) && isdir)
+  {
+//    printf ("%s still open, remove fails\n", e.name);
+    goto done;
+  }
+
+  /* Check whether the dir is empty */
+  isempty = true;
+  if (isdir)
+  { 
+    for (ofs1 = 0; inode_read_at (inode, &ee, sizeof ee, ofs1) == sizeof ee;
+         ofs1 += sizeof ee) 
+      if (ee.in_use && strcmp (".", ee.name) && strcmp ("..", ee.name))
+      {
+        isempty = false;
+//        printf ("NOT EMPTY, %s is still here\n", ee.name);
+        break;
+      }
+  }
+  if (!isempty && isdir)
     goto done;
 
   /* Erase directory entry. */
   e.in_use = false;
   if (inode_write_at (dir->inode, &e, sizeof e, ofs) != sizeof e) 
     goto done;
+
 
   /* Remove inode. */
   inode_remove (inode);
