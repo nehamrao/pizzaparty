@@ -229,7 +229,7 @@ _create (const char *file, unsigned initial_size)
       kill_process();
     }
   if (file == NULL || strlen(file) ==0 )
-  return false;
+    return false;
 
   /* protected filesys operation: create file */
   lock_acquire (&glb_lock_filesys);
