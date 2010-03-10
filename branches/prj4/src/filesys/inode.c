@@ -349,7 +349,10 @@ byte_to_sector (const struct inode *inode, off_t pos, bool enable_expand)
 //          printf ("Expand finished, first sector = %ld\n", meta_block->blocks[0]);
         }
       else
-        return -2;
+        {
+          free (meta_block);
+          return -2;
+        }
     }
 
 
@@ -727,7 +730,10 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   /* Update inode length */
   struct inode_disk* meta_block = calloc (1, BLOCK_SECTOR_SIZE);
   if (meta_block == NULL)
+  {
+    printf ("Out of memory!\n");
     return -1;
+  }
 
   cache_read (cache_get (inode->sector), meta_block,
               0, BLOCK_SECTOR_SIZE);
@@ -786,12 +792,9 @@ inode_isdir (const struct inode *inode)
 {
   struct inode_disk* meta_block = calloc (1, BLOCK_SECTOR_SIZE);
   if (meta_block == NULL)
-    return -1;
+    return 0;
   cache_read (cache_get (inode->sector), meta_block,
               0, BLOCK_SECTOR_SIZE);
-  
-  if (meta_block == NULL)
-  return 0;
 
   off_t result_isdir = meta_block->isdir;
 

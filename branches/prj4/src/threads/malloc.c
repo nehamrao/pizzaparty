@@ -170,6 +170,8 @@ calloc (size_t a, size_t b)
   p = malloc (size);
   if (p != NULL)
     memset (p, 0, size);
+  else 
+    printf ("Calloc failure\n");
 
   return p;
 }

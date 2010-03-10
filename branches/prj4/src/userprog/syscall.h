@@ -5,5 +5,7 @@
 
 void syscall_init (void);
 
+bool _mkdir (const char *dir);
+
 
 #endif /* userprog/syscall.h */

@@ -17,7 +17,7 @@ make_tree (int at, int bt, int ct, int dt)
 
   msg ("creating /0/0/0/0 through /%d/%d/%d/%d...",
        at - 1, bt - 1, ct - 1, dt - 1);
-  quiet = true;
+  quiet = true;//true
   for (a = 0; a < at; a++) 
     {
       do_mkdir ("/%d", a);
@@ -50,7 +50,9 @@ do_mkdir (const char *format, ...)
   vsnprintf (dir, sizeof dir, format, args);
   va_end (args);
 
+//  msg("creating dir %s", dir);
   CHECK (mkdir (dir), "mkdir \"%s\"", dir);
+//  msg("creating dir %s DONE", dir);
 }
 
 static void
@@ -63,5 +65,7 @@ do_touch (const char *format, ...)
   vsnprintf (file, sizeof file, format, args);
   va_end (args);
 
+//  msg("creating %s", file);
   CHECK (create (file, 0), "create \"%s\"", file);
+//  msg("creating %s DONE", file);
 }
