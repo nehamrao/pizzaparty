@@ -301,7 +301,7 @@ expand_inode (const struct inode* inode, off_t pos)
     meta_block->length = meta_block->end;
 
   /*       To be implemented for dir */
-  meta_block->isdir = 0;
+//  meta_block->isdir = 0;
 
   /* Write the updated inode info back to disk */
   cache_write (cache_get (inode->sector), meta_block, 0 , BLOCK_SECTOR_SIZE);
@@ -458,6 +458,7 @@ inode_create (block_sector_t sector, off_t length, off_t isdir)
       disk_inode->end = -1;
       disk_inode->magic = INODE_MAGIC;
       disk_inode->isdir = isdir;
+//      printf ("isdir = %ld, sector = %ld\n", isdir, sector);
       cache_write (cache_get (sector), disk_inode, 0, BLOCK_SECTOR_SIZE);
       success = true;
       free (disk_inode);
@@ -793,10 +794,13 @@ inode_isdir (const struct inode *inode)
   struct inode_disk* meta_block = calloc (1, BLOCK_SECTOR_SIZE);
   if (meta_block == NULL)
     return 0;
+
+//  printf ("sector = %ld\n", inode->sector);
   cache_read (cache_get (inode->sector), meta_block,
               0, BLOCK_SECTOR_SIZE);
 
   off_t result_isdir = meta_block->isdir;
+//  printf ("result_isdir = %ld\n", result_isdir);
 
   free (meta_block);
 
