@@ -7,7 +7,7 @@
 #include "threads/interrupt.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
-#include "filesys/cache.h"
+#include "threads/malloc.h"
   
 /* See [8254] for hardware details of the 8254 timer chip. */
 
@@ -25,6 +25,21 @@ static int64_t ticks;
    Initialized by timer_calibrate(). */
 static unsigned loops_per_tick;
 
+/* a bed is a structure holding sleeping threads */
+struct bed
+{
+  struct semaphore sem;
+  int64_t time_to_wakeup;
+  struct list_elem elem;
+};
+
+/* list of beds holding all sleeping threads */
+static struct list bed_list;
+
+/* the earliest wake up time among all sleeping threads */
+static int64_t earliest_wk_time;
+
+
 static intr_handler_func timer_interrupt;
 static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
@@ -38,6 +53,8 @@ timer_init (void)
 {
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
+
+  list_init (&bed_list);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -88,13 +105,45 @@ timer_elapsed (int64_t then)
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
 void
-timer_sleep (int64_t ticks) 
+timer_sleep (int64_t tick) 
 {
   int64_t start = timer_ticks ();
 
   ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks) 
-    thread_yield ();
+
+  /* disable interrupt */
+  enum intr_level old_level = intr_disable ();
+
+  /* create bed */
+  struct bed* ptr_bed = malloc (sizeof (struct bed));
+  ASSERT (ptr_bed != NULL);
+
+  /* compute wakeup time for the thread in this bed */
+  ptr_bed->time_to_wakeup = start + tick;
+
+  /* update earliest_wk_time */
+  if (list_empty (&bed_list))
+    {
+      earliest_wk_time = ptr_bed->time_to_wakeup;
+    }
+  else
+    {
+      earliest_wk_time =
+        earliest_wk_time < ptr_bed->time_to_wakeup ?
+        earliest_wk_time : ptr_bed->time_to_wakeup;
+    }
+
+  /* init sem in bed */
+  sema_init (&ptr_bed->sem, 0);
+
+  /* put this bed into bed_list */
+  list_push_back (&bed_list, &ptr_bed->elem);
+
+  /* resume interrupt */
+  intr_set_level (old_level);
+
+  /* put this bed to sleep */
+  sema_down (&ptr_bed->sem);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -172,12 +221,29 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
-  if ((ticks % FLUSH_PERIOD == 0) && (cache_initialized))
-  {
-    printf (" life is a flush\n");
- //    cache_flush ();
-  }
-    thread_tick ();
+  thread_tick ();
+  
+  /* if the earliest wake up time comes
+     scan through bed_list if there are threads sleeping */
+  /* interrupt is ensured to be off in this function  */
+  if (earliest_wk_time <= ticks && list_size (&bed_list) > 0)
+    {
+    struct list_elem *e, *next;
+    for (e = list_begin (&bed_list); e != list_end (&bed_list);
+         e = next)
+      {
+        next = list_next (e);
+        
+        /* if a thread hits the time to wakeup */
+        struct bed* b = list_entry (e, struct bed, elem);
+        if (b->time_to_wakeup <= ticks)
+          {
+            /* wake up the sleeping thread */
+            list_remove (&(b->elem));
+            sema_up (&b->sem);
+          }
+      }
+    }
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
