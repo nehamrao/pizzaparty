@@ -264,10 +264,10 @@ _open (const char *file)
     {
       kill_process();
     }
-   if (file == NULL || strlen(file) == 0)
-     return -1;
+  if (file == NULL || strlen(file) == 0)
+    return -1;
 
-   struct file_info* f_info;
+  struct file_info* f_info;
  
   /* protected filesys operation: open file */
   lock_acquire (&glb_lock_filesys);
@@ -280,14 +280,8 @@ _open (const char *file)
   if (f_info->p_file == NULL && f_info->p_dir == NULL)
     return -1;
 
-  /* Initialize file_info structure */
- 
-
   /* for f_info: initial position */
   f_info->pos = 0;
-
-  /* for f_info: record pointer to file structure */
-//  f_info->p_file = f_struct;
 
   /* for f_info: allocate file descriptor, add to array_files */
   struct thread* t = thread_current ();
@@ -622,8 +616,6 @@ _readdir (int fd, char *name)
   else
     return false;
 }
-
-
 
 /* Utility functions */
 
