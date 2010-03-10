@@ -287,8 +287,10 @@ expand_inode (const struct inode* inode, off_t pos)
                                ind_block, 0, BLOCK_SECTOR_SIZE);
                 }
 
-                /* Update inode end position */
-                end_pos = sec_pos;
+              cache_write (cache_get (meta_block->blocks[NUM_DBLOCK + 1]),
+                           dind_block, 0, BLOCK_SECTOR_SIZE);
+              /* Update inode end position */
+              end_pos = sec_pos;
             }
         }
     }
@@ -331,7 +333,14 @@ byte_to_sector (const struct inode *inode, off_t pos, bool enable_expand)
 //  printf ("end = %ld, magic = %lx, pos = %ld\n", meta_block->end, meta_block->magic, pos);
   /* Expand the file if necessary
      also updated LENGTH and END in inode for following lookups */
-  if (pos > meta_block->end)
+  int sec_pos = pos / BLOCK_SECTOR_SIZE;
+  int end_pos;
+  if (meta_block->end < 0)
+    end_pos = -1;
+  else 
+    end_pos = meta_block->end / BLOCK_SECTOR_SIZE;
+
+  if (sec_pos > end_pos)
     {
       if (enable_expand)
         {
@@ -343,6 +352,7 @@ byte_to_sector (const struct inode *inode, off_t pos, bool enable_expand)
           /* read data again */
           cache_read (cache_get (inode->sector), meta_block,
                       0, BLOCK_SECTOR_SIZE);
+//          printf ("Finish: inode->sector = %ld, pos = %ld, meta_block->end = %ld\n", inode->sector, pos, meta_block->end);
 //          printf ("Expand finished, first sector = %ld\n", meta_block->blocks[0]);
         }
       else
@@ -356,7 +366,6 @@ byte_to_sector (const struct inode *inode, off_t pos, bool enable_expand)
     /* By now we have expanded file if necessary,
        and it is safe to query all positions before inode->end */
     int result = -1;
-    int sec_pos = pos / BLOCK_SECTOR_SIZE;
 
     if (sec_pos < NUM_DBLOCK)            /* From direct blocks */
       {
@@ -643,10 +652,13 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
 
   while (size > 0) 
     {
-//      printf ("offset = %ld, inode->sector = %ld\n", offset, inode->sector);
-      
+//      if (offset == 513)
+//      {
+//        printf ("offset = %ld, inode->sector = %ld\n", offset, inode->sector);
+//      }
       /* Disk sector to read, starting byte offset within sector. */
       block_sector_t sector_idx = byte_to_sector (inode, offset, false);
+//      printf ("offset = %ld, sector_idx = %ld\n", offset, sector_idx);
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 
       if (sector_idx == -1)
