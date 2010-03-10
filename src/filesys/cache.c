@@ -1,23 +1,24 @@
-//cache.c
 #include "cache.h"
 #include "filesys.h"
 #include <stdio.h>
 #include <string.h>
 #include "threads/palloc.h"
 
-/* Is this OK? We do not have SECTOR_ERROR is we use codes from prj2 */
 #define SECTOR_ERROR -1;
 
 struct cache_block cache_block[64];
 
+/* Flag indicating whether cache is set up */
 bool cache_initialized = false;
 
+/* Initialize buffer cache */
 void
 cache_init ()
 {
   uint8_t *kpage;
   int i, j;
 
+  /* Allocate buffer cache space in memory */
   for (i = 0; i < 8; i++)
   {
     kpage = (uint8_t*)palloc_get_page (PAL_ZERO);
@@ -27,6 +28,7 @@ cache_init ()
       memset (cache_block[i*8+j].data, 0, BLOCK_SECTOR_SIZE);
     }
   }
+  /* Set parameters */
   for (i = 0; i < 64; i++)
   {
     cache_block[i].sector_no = SECTOR_ERROR;
@@ -41,23 +43,26 @@ cache_init ()
   return;
 }
 
+/* Get the cache block storing SECTOR_NO sector on disk  */
 struct cache_block *
 cache_get (block_sector_t sector_no)
 {
   int idx = -1;
-  uint32_t min_time_stamp = 1 << 31;
   int victim = -1;
+  uint32_t min_time_stamp = 1 << 31;
 
-  int i = 0;
+  /* Look for SECTOR_NO sector in buffer cache, if not found, 
+     pick the victim with the smallest time_stamp for eviction */
+  int i;
   for (i = 0; i < 64; i++)
   {
-    if (cache_block[i].sector_no == sector_no)
+    if (cache_block[i].sector_no == sector_no)	
     {
       idx = i;
       cache_block[i].time_stamp = (1 << 30);
     } else 
     {
-      if (cache_block[i].time_stamp) 
+      if (cache_block[i].time_stamp)
         cache_block[i].time_stamp --;
     }
     if ( (cache_block[i].shared_lock.i == 0)
@@ -68,14 +73,24 @@ cache_get (block_sector_t sector_no)
     }
   }
 
-  if ((idx == -1) && (victim != -1))
+  /* Record found in cache buffer */
+  if (idx != -1)
+  { 
+//    printf ("Found record %ld block\n", idx);///
+    return &cache_block[idx];
+  }
+
+
+  /* Record not found, evict a victim cache block */
+  if (victim != -1)
   {
- //   printf ("Evict no: %ld\n", victim);
-    /* Eviction process begins */
+ //   printf ("Evict no: %ld\n", victim);///
+    /* If dirty, write to disk before eviction */
     if (cache_block[victim].dirty)
     {
-    /* Write behind to be implemented here *******************************************/
-      block_write (fs_device, cache_block[victim].sector_no, cache_block[victim].data);
+    /* Write behind to be implemented here *******************************************///
+      block_write (fs_device, cache_block[victim].sector_no, 
+                   cache_block[victim].data);
       cache_block[victim].dirty = false;
     }
     cache_block[victim].sector_no = sector_no;
@@ -83,53 +98,45 @@ cache_get (block_sector_t sector_no)
     cache_block[victim].time_stamp = (1 << 30);
     return &cache_block[victim];
   }
-
-  if ((idx == -1) && (victim == -1))
-  {
-//    printf ("Cache busy!\n");   /*********/
-    return NULL;
-  }
-
-  if (idx != -1)
-  { 
-//    printf ("Found record %ld block\n", idx);
-    return &cache_block[idx];
-  }
+//    printf ("Cache busy!\n");   ///
+  return NULL;
 }
 
+/* Read LENGTH data from cache_block at OFS offset, to buffer DATA */
 void 
 cache_read ( struct cache_block *cb, void *data, off_t ofs, int length)
 {
-//  if (cb->sector_no == 105)
-//    printf ("************** Cache READ!!!!!!!!!!!!!!!!!!!!!! %ld \n", cb->sector_no);
-//  acquire_shared (&cb->shared_lock);
+// printf ("************** Cache READ!!!!!!!!!!!!!!!!!!!!!! %ld \n", cb->sector_no);///
+
+  /* Allow multiple reader, so acquire lock in shared mode*/
+  acquire_shared (&cb->shared_lock);
   if (!cb->present)
   {
-//    printf ("read %ld block from disk\n", cb->sector_no);
+//    printf ("read %ld block from disk\n", cb->sector_no);///
     block_read (fs_device, cb->sector_no, cb->data);
     cb->present = true;
   }
   memcpy ( data, cb->data + ofs, length);
-  /* Read ahead to be implemented here ****************/
-//  release_shared (&cb->shared_lock);
+  /* Read ahead to be implemented here ****************////
+  release_shared (&cb->shared_lock);
 }
 
+/* Write LENGTH data to cache_block at OFS offset, from buffer DATA */
 void 
 cache_write ( struct cache_block *cb, void *data, off_t ofs, int length)
 {
-//  if (cb->sector_no == 105)
-//    printf ("************** Cache Write!!!!!!!!!!!!!!!!!!!!!! %ld \n", cb->sector_no);
+//  printf ("************** Cache Write!!!!!!!!!!!!!!!!!!!!!! %ld \n", cb->sector_no);
+  /* Do NOT allow other reader nor writer, so acquire lock in exclusive mode*/
   acquire_exclusive (&cb->shared_lock);
   cb->dirty = true;
   cb->present = true;
   memcpy (cb->data+ofs, data, length);
-
-//  block_write (fs_device, cb->sector_no, cb->data);
   release_exclusive (&cb->shared_lock);
-//  if (!cb->sector_no)
-//  cache_flush (); /* To be removed */
+//  cache_flush (); /* To be removed *////
 }
 
+/* Flush cache, check the dirty bits of all cache buffer blocks,
+   if dirty, write to disk */
 void 
 cache_flush (void)
 { 
@@ -145,21 +152,7 @@ cache_flush (void)
   }
 }
 
-/* Compare a and b for a given length, return true if different, 
-   false if the same */
-bool
-blkcmp (uint8_t *a, uint8_t *b, int length)
-{
-  while ((length > 0) && (*a == *b))
-  {
-    a ++;
-    b ++;
-    length --;
-  }
-  return (length > 0);
-}
-
-
+/* Acquire lock in shared mode */
 void 
 acquire_shared (struct shared_lock *s)
 {
@@ -172,6 +165,7 @@ acquire_shared (struct shared_lock *s)
   lock_release (&s->lock);
 }
 
+/* Acquire lock in exlusive mode */
 void 
 acquire_exclusive (struct shared_lock *s)
 {
@@ -184,6 +178,7 @@ acquire_exclusive (struct shared_lock *s)
   lock_release (&s->lock);
 }
 
+/* Release lock in shared mode */
 void 
 release_shared (struct shared_lock *s)
 {
@@ -194,6 +189,7 @@ release_shared (struct shared_lock *s)
   lock_release (&s->lock);
 }
 
+/* Release lock in exclusive mode */
 void
 release_exclusive (struct shared_lock *s)
 {
