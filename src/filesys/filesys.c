@@ -42,12 +42,19 @@ filesys_done (void)
 
 /* Creates a file named NAME with the given INITIAL_SIZE.
    Returns true if successful, false otherwise.
-   Fails if a file named NAME already exists,
+   Fails if a file named NAME already exists, 
+   or given directory is invalid,
    or if internal memory allocation fails. */
 bool
-filesys_create (const char *name, off_t initial_size) 
+filesys_create (const char *name_, off_t initial_size) 
 {
-  block_sector_t inode_sector = 0;
+  /* Get a copy of name_ */
+  char *name = malloc (strlen(name_) + 1);
+  if (name == NULL)
+    return false;
+  strlcpy (name, name_, strlen(name_) + 1);
+
+  /* Get the current directory. */
   struct thread *t = thread_current ();
   struct dir *dir;
   if (name[0] == '/' || t->current_dir == NULL)
@@ -55,20 +62,14 @@ filesys_create (const char *name, off_t initial_size)
   else
     dir = dir_reopen (t->current_dir);
 
-  char *file_name = malloc (strlen(name) + 1);
-  if (file_name == NULL)
-  {
-    dir_close (dir);
-    return false;
-  }
-  strlcpy (file_name, name, strlen(name) + 1);
- 
+  /* Parse the directory name, and recursively enter sub-directories */
   char *token1, *token2, *save_ptr;
   struct inode *inode = NULL;
   bool success = true;
 
-  token1 = strtok_r (file_name, "/", &save_ptr);
-  for (token2 = strtok_r (NULL, "/", &save_ptr); token2 != NULL; token2 = strtok_r (NULL, "/", &save_ptr))
+  token1 = strtok_r (name, "/", &save_ptr);
+  for (token2 = strtok_r (NULL, "/", &save_ptr); token2 != NULL; 
+       token2 = strtok_r (NULL, "/", &save_ptr))
   {
     success = dir_lookup (dir, token1, &inode);
     dir_close (dir);
@@ -77,37 +78,30 @@ filesys_create (const char *name, off_t initial_size)
 
     dir = dir_open (inode);
     token1 = token2;
+    if (strlen (token1) > NAME_MAX)
+      return false; 
   }
- 
-  if (strlen (token1) > NAME_MAX)
-    return false; 
- 
-  bool success1, success2, success3;
-  if (success)
-  {
-    success1 = free_map_allocate (1, &inode_sector);
-    success2 = inode_create (inode_sector, initial_size, false);
-    success3 = dir_add (dir, token1, inode_sector);
-//    printf ("success %d %d %d \n", success1, success2, success3);
-    success = (dir != NULL && success1 && success2 && success3);
-                /*  && free_map_allocate (1, &inode_sector) 
-                  && inode_create (inode_sector, initial_size, 0)
-                  && dir_add (dir, token1, inode_sector));*/
-//  printf ("success = %ld, filecreate inode_sector = %ld\n", success, inode_sector);
-  }
+
+  /* Create an inode and add the file to current directory */
+  block_sector_t inode_sector;
+  success = (dir != NULL && free_map_allocate (1, &inode_sector) 
+                && inode_create (inode_sector, initial_size, 0)
+                && dir_add (dir, token1, inode_sector));
+
   if (!success && inode_sector != 0) 
     free_map_release (inode_sector, 1);
 
-  dir_close (dir);
- 
-  if (file_name != NULL)
-    free (file_name);
-
+  dir_close (dir); 
+  free (name);
   return success;
 }
 
-
-struct file *
+/* Opens the file with the given NAME.
+   Returns the new file if successful or a null pointer
+   otherwise.
+   Fails if no file named NAME exists,
+   or if an internal memory allocation fails. */
+static struct file * 
 filesys_open (const char *name)
 {
   struct dir *dir = dir_open_root ();
@@ -121,58 +115,57 @@ filesys_open (const char *name)
 }
 
 
-/* Opens the file with the given NAME.
-   Returns the new file if successful or a null pointer
-   otherwise.
-   Fails if no file named NAME exists,
-   or if an internal memory allocation fails. */
+/* Opens the file with the given NAME. Recursively find the directory,
+   and then use function file_open() to open the file. */
 struct file_info * 
 filesys_open_file (const char *name_)
 {
-  struct thread *t = thread_current ();
-  struct dir *dir; 
-  struct inode *inode = NULL;
-  char *token1, *token2, *save_ptr;
-  struct file_info * f_info = (struct file_info *) malloc (sizeof (struct file_info));
   char name [strlen (name_) + 1];
   strlcpy (name, name_, strlen(name_)+1);
 
+  /* Get the current directory */
+  struct thread *t = thread_current ();
+  struct dir *dir; 
   if (name[0] == '/')
     dir = dir_open_root ();     
   else
     dir = dir_reopen(t->current_dir);
 
-  token1 = strtok_r (name, "/", &save_ptr);
-
+  /* Parse NAME, and recursively navigate to the directory 
+     that the file resides */
+  struct inode *inode = NULL;
+  char *token1, *token2, *save_ptr;
   bool success = true;
 
+  token1 = strtok_r (name, "/", &save_ptr);
   for (token2 = strtok_r (NULL, "/", &save_ptr); token2 != NULL; token2 = strtok_r (NULL, "/", &save_ptr))
   {
     success = dir_lookup (dir, token1, &inode);
     dir_close (dir);
     if (!success) 
       return NULL;     
-
     dir = dir_open (inode);
     token1 = token2;
   }
 
+  /* If open root directory, open it, otherwise look up the file */
   if (token1 == NULL)
   {
     inode = inode_open (ROOT_DIR_SECTOR);
-    if (inode == NULL)
-      return NULL;
   }
   else 
   {
     if (!dir_lookup (dir, token1, &inode))
       return NULL;
   }
-
   dir_close (dir);
-    
+
+  /* If the subject is a directory, then open it using function dir_open ()
+     and store the returning struct to f_info->p_dir; if it is a file, then
+     open it using function file_open () */
   off_t isdir = inode_isdir (inode);
 
+  struct file_info * f_info = (struct file_info *) malloc (sizeof (struct file_info));
   if (isdir)
   {
     f_info->p_dir = dir_open (inode);
@@ -191,46 +184,43 @@ filesys_open_file (const char *name_)
    Fails if no file named NAME exists,
    or if an internal memory allocation fails. */
 bool
-filesys_remove (const char *name) 
+filesys_remove (const char *name_) 
 {
+  /* Make a copy of NAME */
+  char * name = malloc(strlen (name_) + 1);
+  if (name == NULL)
+    return false;    
+  strlcpy (name, name_, strlen (name_) + 1);
+
+  /* Get current directory */
   struct thread * t = thread_current ();
   struct dir *dir;
-  bool success = false;
-
   if (name[0] == '/')
     dir = dir_open_root ();     
   else
     dir = dir_reopen(t->current_dir);
 
+  /* Parse directories */
+  bool success = false;
   char *token1, *token2, *save_ptr;  
-  char * file_name = malloc(strlen (name) + 1);
-  if (file_name == NULL)
-  {
-    dir_close (dir);
-    return false;    
-  }
-  strlcpy (file_name, name, strlen (name) + 1);
-
-  token1 = strtok_r (file_name, "/", &save_ptr);
+  struct inode *inode = NULL;
+  token1 = strtok_r (name, "/", &save_ptr);
   for (token2 = strtok_r (NULL, "/", &save_ptr); token2 != NULL; token2 = strtok_r (NULL, "/", &save_ptr))
   {
-    struct inode *inode = NULL;
-    success = dir_lookup (dir, token1, &inode);     
+    success = dir_lookup (dir, token1, &inode);   
+    dir_close (dir);  
     if (!success)
-    {
-      dir_close (dir);
       return false;
-    }
-     
-    dir_close (dir);
     dir = dir_open (inode);   
     token1 = token2;
   }
   
+  /* If not removing root directory, use dir_remove() to remove it */
   if (token1 != NULL)
     success = dir_remove (dir, token1);
 
   dir_close (dir); 
+  free (name);
   return success;
 }
 
