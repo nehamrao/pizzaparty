@@ -69,10 +69,17 @@ Yinfeng Qin   <yinfeng@stanford.edu>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+
 ---- ALGORITHMS ----
 
 >> B2: Describe your code for traversing a user-specified path.  How
 >> do traversals of absolute and relative paths differ?
+To traverse a user-specified path, judgement is made using the first character
+of given path to decide whether it is a relative path or absolute one. An 
+absolute path starts with "/", and the directory is opened starting from root
+directory. For relative paths, process's current directory is used as the
+starting point. The sparse and open process of given path is performed the same
+ever after. 
 
 ---- SYNCHRONIZATION ----
 
@@ -81,15 +88,71 @@ Yinfeng Qin   <yinfeng@stanford.edu>
 >> should succeed, as should only one of two simultaneous attempts to
 >> create a file with the same name, and so on.
 
+To prevent the race conditions on directory entries, we use a global lock
+for file system operation. Each system call for modifying or creating a new
+file is only allowed to be done sequentially on system call level. It is true
+that some of the parallerism may not be taken full advantage of in this case. 
+But considering the fact that remove and create an directory entry may 
+interleave if synchronization is implemented on directory operation level, 
+ 
+
+
 >> B5: Does your implementation allow a directory to be removed if it
 >> is open by a process or if it is in use as a process's current
 >> working directory?  If so, what happens to that process's future
 >> file system operations?  If not, how do you prevent it?
 
+In our design, we disallow a directory to be removed if it is opened or in use 
+by any process other than the "delete" process. 
+This is because if we allow the directory to be deleted when other processses 
+still working on it, each time when a process needs to perform tasks on its 
+current directory, it has to check whether its current directory is still valid
+, as for that its current directory could be deleted by other processes without
+any notification. This would cause a lot of waste in checking. It would also 
+require extra overhead in synchroniztion if deletion is allowed, since a 
+deletion could happen at any point when a process is openning or working on the
+directory. Efforts have to be made to prevent race conditions in this case.  We 
+believe that overall performance would be hampered if such deletion is allowed.
+This is why we disallow such deletion. 
+To prevent the deletion of the opened directory, we added a function to check
+if the directory is opened by other processes or not. As the directory's 
+inode is always opened by the "delete" process for deletion, the inode's open
+count would be larger than 2 if any other processes is working on it. Whenever
+a deletion is executed, the open count is compared to decide whether the 
+directory satifies deletion requirements. The directory's inode open count 
+could be served as an effective judgement only if processes' working directory
+actually opens the directory when working or openning it. This is why we 
+implement a directory struct pointer in each process pointing to the opened 
+directory. If a direcoty does not satisfy deletion requirments, the deletion 
+would be aborted.
+
 ---- RATIONALE ----
 
 >> B6: Explain why you chose to represent the current directory of a
 >> process the way you did.
+
+We choose to represent the current directory of a process by using a directory
+pointer to point at current directory. Each time a "chdir" system call is 
+called, the old directory is closed and the directory pointer is pointed
+to the new directory. A new process's current directory is inherited from
+its parent process, by reopen the parent process's directory. Another way to 
+record current directory is to use a string pointer record the absolute path
+of the process's current directory. One major disadvantage is that, opening 
+a new file requires sequentially opens all the subdirectories every time. 
+Much of the time and space would enduced especially when the process's current
+directory becomes deep. We choose to use the first approach to avoid this 
+problem. By pointing to the current directory struct, open or create a new file
+in current directory does not need to open and search through all the 
+subdirectories from root. 
+Another advantage to use directory pointer pointed to actual directory struct
+is in the benefits of telling an directory's inode that it is currently being
+used. Whenever a subdirectory is pointed by the process, a dir_open call 
+would be made, which is ensued by an inode_open of the directory's inode. 
+In this way, it is easier to know if other processes are pointing at the 
+directory for the judgement of whether deletion of current process is 
+appropriate.
+
+
 
 			     BUFFER CACHE
 			     ============
