@@ -84,6 +84,7 @@ cache_get (block_sector_t sector_no)
   /* Record not found, evict a victim cache block */
   if (victim != -1)
   {
+    acquire_exclusive (&cache_block[victim].shared_lock);
  //   printf ("Evict no: %ld\n", victim);///
     /* If dirty, write to disk before eviction */
     if (cache_block[victim].dirty)
@@ -96,6 +97,7 @@ cache_get (block_sector_t sector_no)
     cache_block[victim].sector_no = sector_no;
     cache_block[victim].present = false;
     cache_block[victim].time_stamp = (1 << 30);
+    release_exclusive (&cache_block[victim].shared_lock);
     return &cache_block[victim];
   }
 //    printf ("Cache busy!\n");   ///

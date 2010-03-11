@@ -77,14 +77,12 @@ start_process (void *file_name_)
 
   /* Notify parent process if loading of child process is successful */
   /* Protect filesys operations */
-  lock_acquire (&glb_lock_filesys);
   success = load (file_name, &if_.eip, &if_.esp);
   struct thread* t = thread_current ();
   t->parent_thread->process_info->child_load_success = success;
   
  
   sema_up (&t->parent_thread->process_info->sema_load);
-  lock_release (&glb_lock_filesys);
 
    if (t->parent_thread->current_dir != NULL)
     t->current_dir = dir_reopen (t->parent_thread->current_dir);
