@@ -142,8 +142,18 @@ ever after.
 >> should succeed, as should only one of two simultaneous attempts to
 >> create a file with the same name, and so on.
 
-To prevent the race conditions on directory entries, we use a global lock
-for file system operation. Each system call for modifying or creating a new
+To prevent the race conditions on directory entries, we implement a lock in
+each inode for directory access. Since the directory's inode is the only 
+landmark differentiate it from other directories, a lock inside the inode 
+could help us prevent multiple accesses to the same directory but allow 
+different directories to be opened or modified concurrently. 
+For instance, to avoid two simultaneous attempts to remove a single file, the
+working directory's lock inside its inode is acquired at the beginning of the
+remove process. In doing so, other remove calls working on a different 
+directory could happen at the same time, while operations on one directory is 
+waiting for one another. The directory's lock is released until the end of 
+remove process, so that remove operation in the same directory could not simul. 
+to for file system operation. Each system call for modifying or creating a new
 file is only allowed to be done sequentially on system call level. It is true
 that some of the parallerism may not be taken full advantage of in this case. 
 But considering the fact that remove and create an directory entry may 
@@ -239,8 +249,31 @@ so a list is a reasonable choice to serve this aim.
 >> buffer cache block, how are other processes prevented from evicting
 >> that block?
 
+To prevent other processes from evicting a block that is currently under 
+writing or reading, we implement a cache lock for each of the cache block. 
+Different blocks share an independent lock so that concurrent operations
+on different cache blocks are guaranteed. In our design, the lock has two 
+modes: one is acquire_shared, which is used for multiple processes reading
+the same block and prevent further writing operations; the other mode is
+acquire_exclusive, which one is used for cache writing or cache evitions. In 
+our design, any time before a cache becomes actively reading or writing, the
+integer inside the cache lock is added, and decreased when the lock is freed. 
+By doing so, we ensure that the integer inside lock is positive if any 
+process is using it. We implement our design of selecting victim by ensure 
+that the integer is not positive. In doing so, we ensured that the cache 
+block chosen as victim is not currently in reading or in writing. And that
+other processes would not evict an active data in the buffer cache block. 
+
 >> C6: During the eviction of a block from the cache, how are other
 >> processes prevented from attempting to access the block?
+
+To assure that the victim block would not be further accessed by other block
+during the process of eviction, we acquire the exclusive cache block right 
+after the victim is chosen. and release the lock until the cache block's 
+content is written back to disk. Since other activites such as writing or 
+reading all requires to acquire the lock possessed by the eviction process,
+further access to the same block is prevented during eviction.
+
 
 ---- RATIONALE ----
 
