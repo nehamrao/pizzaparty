@@ -38,6 +38,7 @@ static bool is_user_fd (int fd);
 static bool _is_dir (int fd);
 static block_sector_t _inumber (int fd);
 static bool _chdir (const char *dir);
+
 //static bool _mkdir (const char *dir);///
 //static bool _readdir (int fd, char *name);///
 
@@ -465,10 +466,10 @@ _is_dir (int fd)
       kill_process ();
     }
   
-  struct thread *t = thread_current ();
-  
+  struct thread *t = thread_current (); 
   struct file_info * file_info = t->array_files[fd];
 
+  /* Files and directories treated as the same in file descriptor */
   return ((file_info->p_file == NULL) && (file_info->p_dir != NULL));
   
 } 
@@ -476,15 +477,14 @@ _is_dir (int fd)
 static block_sector_t
 _inumber (int fd)
 {
-  struct thread *t = thread_current ();
-  
+  struct thread *t = thread_current ();  
   struct file_info * file_info = t->array_files[fd];
   
   if (file_info == NULL)
   {
     PANIC ("File info empty!\n");
   }
-
+  /* Return Inode's sector number for inumber */
   if (file_info->p_file != NULL)
     return inode_get_inumber (file_get_inode (file_info->p_file));  
  
@@ -503,26 +503,25 @@ _chdir (const char *dir)
   char *token, *save_ptr;
   struct inode * inode = NULL;
   bool success = true;
-   
-   if (dir[0] == '/')
-   { 
-     dir_close (t->current_dir);
-     t->current_dir = dir_open_root ();    
-   }
-   
-   for (token = strtok_r (dir, "/", &save_ptr); token != NULL; token = strtok_r (NULL, "/", &save_ptr))
-   {
-   //  printf ("%s\n",token);
-     if(!dir_lookup (t->current_dir, token, &inode))
-     {
-       success = false;
-       break;
-     }
-     dir_close(t->current_dir);
-     t->current_dir = dir_open (inode);      
-   }
+   /* Judge whether absolute path or relative path */
+  if (dir[0] == '/')
+  { 
+    dir_close (t->current_dir);
+    t->current_dir = dir_open_root ();    
+  }
+  /* Parse the path and open directory sequentially */ 
+  for (token = strtok_r (dir, "/", &save_ptr); token != NULL; token = strtok_r (NULL, "/", &save_ptr))
+  {
+    if(!dir_lookup (t->current_dir, token, &inode))
+    {
+      success = false;
+      break;
+    }
+    dir_close(t->current_dir);
+    t->current_dir = dir_open (inode);      
+  }
 
-   return success;  
+  return success;  
 }
 
 bool 
@@ -531,68 +530,51 @@ _mkdir (const char *dir_)
   struct thread *t = thread_current ();
   struct dir * opendir;
   char *token1, *token2, *save_ptr;
-
   bool success = true;
   char temp[NAME_MAX + 1];
   char dir[strlen (dir_)+1];
   strlcpy (dir, dir_, strlen(dir_)+1);
-
+  
+  /* Judge whether an absolute path or relative path */
   if (dir[0] == '/')
     opendir = dir_open_root ();
   else 
     opendir = dir_reopen (t->current_dir);
-// printf ("%d\n", opendir->inode);
+ 
+  /* Parse path and open directories leaving the last directory name to make */
   token1 = strtok_r (dir, "/", &save_ptr);
-//  printf ("%s\n", token1);
+
   for (token2 = strtok_r (NULL, "/", &save_ptr); token2 != NULL; token2 = strtok_r (NULL, "/", &save_ptr) )
   {
-
     struct inode *inode = NULL;
-  //   printf ("token1: %s\n", token1);
     success = dir_lookup (opendir, token1, &inode);
     if (!success)
     {
-//      printf ("Lookup Failed\n"); // change
       return false;
     }
     dir_close (opendir);
     opendir = dir_open (inode);   
-
     token1 = token2;
   }
  
-//  printf ("%s\n", token1);
-
   if (token1 == NULL)
   {
-//     printf ("Token1 = NULL\n"); //change
      return false;
   }
 
   strlcpy (temp, token1, sizeof temp); 
-//  printf ("success before = %ld\n", success);	//change
-    
-  // printf ("%d\n", opendir->inode);
+ 
+  /* Create an inode for new directory and add it to the opened directory */
   block_sector_t inode_sector = 0;
-//  success = (opendir != NULL
-//                    && free_map_allocate (1, &inode_sector)
-//                    && dir_create (inode_sector, inode_get_inumber (dir_get_inode (opendir)),20)                     
-//                    && dir_add (opendir, temp, inode_sector));
-  success = (opendir != NULL) && free_map_allocate (1, &inode_sector);
-//  if (!success)
-//    printf ("free map allocate fail\n");
-  success = success && dir_create (inode_sector, inode_get_inumber (dir_get_inode (opendir)), 20);
-//  if (!success)
-//    printf ("dir_create fails\n");
-  success = success && dir_add (opendir, temp, inode_sector);
-//  if (!success)
-//  {
-//    printf ("dir_add fails\n");
-//  }
+  success = (opendir != NULL
+                     && free_map_allocate (1, &inode_sector)
+                     && dir_create (inode_sector, inode_get_inumber (dir_get_inode (opendir)),20)                     
+                     && dir_add (opendir, temp, inode_sector));
+  
   dir_close (opendir);
   if (!success && inode_sector != 0)
         free_map_release (inode_sector, 1);
-//  printf ("success after = %ld\n", success);  //change	
+	
   return success;
 }
 
@@ -602,9 +584,9 @@ _readdir (int fd, char *name)
 {
     /* Lookup up file descriptor. */
   if (fd != STDOUT_FILENO && fd != STDIN_FILENO)
-    {
- 
+    { 
       struct thread *t = thread_current ();
+      /* Read a directory entry from directory */
       if (t->array_files[fd]->p_dir == NULL)
         return false;    
       else 

@@ -30,8 +30,7 @@ struct inode_disk
     block_sector_t blocks[NUM_DBLOCK + 2];
                                         /* Direct blocks and 2 more for 
                                            single, double indirect blocks */
-
-    uint32_t unused[122 - NUM_DBLOCK]; /* Not used. */
+    uint32_t unused[122 - NUM_DBLOCK];  /* Not used. */
   };
 
 /* In-memory inode. */
