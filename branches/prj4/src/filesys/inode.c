@@ -48,6 +48,11 @@ struct inode
    returns the same `struct inode'. */
 static struct list open_inodes;
 
+static bool expand_inode (const struct inode* inode, off_t pos);
+static block_sector_t allocate_indirect_sector (block_sector_t* block_content, int range);
+static block_sector_t allocate_sector (block_sector_t* block_content);
+static block_sector_t byte_to_sector (const struct inode *inode, off_t pos, bool enable_expand);
+
 /* Returns the number of sectors to allocate for an inode SIZE
    bytes long. */
 static inline size_t
@@ -57,7 +62,7 @@ bytes_to_sectors (off_t size)
 }
 
 /* Allocate a sector with given BLOCK_CONTENT written */
-block_sector_t
+static block_sector_t
 allocate_sector (block_sector_t* block_content)
 {
   block_sector_t allocated_sector = -1;
@@ -74,7 +79,7 @@ allocate_sector (block_sector_t* block_content)
 
 /* Allocate an indirect sector, containing RANGE number of leaf sectors
    each written with given BLOCK_CONTENT */
-block_sector_t
+static block_sector_t
 allocate_indirect_sector (block_sector_t* block_content, int range)
 {
   /* If range exceeds the max number of records, return false */
@@ -97,7 +102,7 @@ allocate_indirect_sector (block_sector_t* block_content, int range)
 
 /* Expand inode, allocate new blocks from previous END all the way to POS
    update END and LENGTH if necessary */
-bool
+static bool
 expand_inode (const struct inode* inode, off_t pos)
 {
   block_sector_t *dind_block = NULL, *ind_block = NULL, *empty_block = NULL;
@@ -318,7 +323,7 @@ done:
 /* Returns the block device sector that contains byte offset POS within INODE.
    First expand the inode as indicated by ENABLE_EXPAND
    Then lookup in the inode */
-block_sector_t
+static block_sector_t
 byte_to_sector (const struct inode *inode, off_t pos, bool enable_expand)
 {
   block_sector_t *dind_block = NULL, *ind_block = NULL, *empty_block = NULL;
@@ -726,11 +731,9 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   /* Update inode length */
   struct inode_disk* meta_block = calloc (1, BLOCK_SECTOR_SIZE);
   if (meta_block == NULL)
-  {
-    printf ("Out of memory!\n");
     return -1;
-  }
 
+  /* Extend the length of inode to the last byte written */
   cache_read (cache_get (inode->sector), meta_block,
               0, BLOCK_SECTOR_SIZE);
   meta_block->length = meta_block->length > offset + size ?
@@ -739,8 +742,6 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
                0, BLOCK_SECTOR_SIZE);
 
   free (meta_block);
-
-
   return bytes_written;
 }
 
@@ -783,12 +784,13 @@ inode_length (const struct inode *inode)
   return result_length;
 }
 
+/* TRUE if inode is a directory inode, FALSE otherwise */
 bool
 inode_isdir (const struct inode *inode)
 {
   struct inode_disk* meta_block = calloc (1, BLOCK_SECTOR_SIZE);
   if (meta_block == NULL)
-    return 0;
+    return false;
 
   cache_read (cache_get (inode->sector), meta_block,
               0, BLOCK_SECTOR_SIZE);
@@ -801,6 +803,7 @@ inode_isdir (const struct inode *inode)
 
 }
 
+/* Return the open count of inode */
 int
 inode_isopen (const struct inode * inode)
 {
