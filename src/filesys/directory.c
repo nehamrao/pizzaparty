@@ -30,6 +30,7 @@ dir_create (block_sector_t sector, block_sector_t parent_sector, size_t entry_cn
   if (inode_create (sector, entry_cnt * sizeof (struct dir_entry), true))
     {
       struct dir *dir = dir_open (inode_open (sector));
+      /* Create "." and ".." directories in the new created directory */
       dir_add (dir, ".", sector);
       dir_add (dir, "..", parent_sector);
       dir_close (dir);
@@ -148,8 +149,7 @@ dir_lookup (const struct dir *dir, const char *name,
    file by that name.  The file's inode is in sector
    INODE_SECTOR.
    Returns true if successful, false on failure.
-   Fails if NAME is invalid (i.e. too long) or a disk or memory
-   error occurs. */
+   Fails if NAME is invalid or cannot find directory*/
 bool
 dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
 {
@@ -160,11 +160,10 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
   ASSERT (name != NULL);
 
   /* Check NAME for validity. */
-  if (*name == '\0' || strlen (name) > NAME_MAX)
-  {
+  if (*name == '\0')
     return false;
-  } 
-  /* Check that NAME is not in use. */
+
+  /* Check that file does not already exist. */
   if (lookup (dir, name, NULL, NULL))
   { 
     goto done;
@@ -181,6 +180,7 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
        ofs += sizeof e) 
     if (!e.in_use)
       break;
+
   /* Write slot. */
   e.in_use = true;
   strlcpy (e.name, name, sizeof e.name);
@@ -188,7 +188,7 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
   
   success = inode_write_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
 
- done:
+done:
   return success; 
    
 }
@@ -220,16 +220,14 @@ dir_remove (struct dir *dir, const char *name)
   if (inode == NULL)
     goto done;
 
+  /* For directory, check whether it is empty; for file, remove directly */
   bool isdir = inode_isdir (inode);
 
   /* Protect directory in use */
-  if ( (inode_isopen (inode) > 1) && isdir)
-  {
-//    printf ("%s still open, remove fails\n", e.name);
+  if ((inode_isopen (inode) > 1) && isdir)
     goto done;
-  }
 
-  /* Check whether the dir is empty */
+  /* Check whether the directory is empty */
   isempty = true;
   if (isdir)
   { 
@@ -238,14 +236,15 @@ dir_remove (struct dir *dir, const char *name)
       if (ee.in_use && strcmp (".", ee.name) && strcmp ("..", ee.name))
       {
         isempty = false;
-//        printf ("NOT EMPTY, %s is still here\n", ee.name);
         break;
       }
   }
+
+  /* If directory is not empty, return false; */
   if (!isempty && isdir)
     goto done;
 
-  /* Erase directory entry. */
+  /* Erase directory or file entry. */
   e.in_use = false;
   if (inode_write_at (dir->inode, &e, sizeof e, ofs) != sizeof e) 
     goto done;

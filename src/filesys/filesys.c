@@ -38,6 +38,7 @@ void
 filesys_done (void) 
 {
   free_map_close ();
+  cache_flush ();
 }
 
 /* Creates a file named NAME with the given INITIAL_SIZE.
@@ -78,12 +79,12 @@ filesys_create (const char *name_, off_t initial_size)
 
     dir = dir_open (inode);
     token1 = token2;
-    if (strlen (token1) > NAME_MAX)
-      return false; 
   }
+  if (strlen (token1) > NAME_MAX)
+    return false; 
 
   /* Create an inode and add the file to current directory */
-  block_sector_t inode_sector;
+  block_sector_t inode_sector = 0;
   success = (dir != NULL && free_map_allocate (1, &inode_sector) 
                 && inode_create (inode_sector, initial_size, 0)
                 && dir_add (dir, token1, inode_sector));
@@ -101,7 +102,7 @@ filesys_create (const char *name_, off_t initial_size)
    otherwise.
    Fails if no file named NAME exists,
    or if an internal memory allocation fails. */
-static struct file * 
+struct file * 
 filesys_open (const char *name)
 {
   struct dir *dir = dir_open_root ();
