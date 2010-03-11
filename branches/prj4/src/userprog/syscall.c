@@ -25,10 +25,10 @@ static pid_t _exec (const char *cmd_line);
 static int _wait (pid_t pid);
 static bool _create (const char *file, unsigned initial_size);
 static bool _remove (const char *file);
-//static int _open (const char *file);
+//static int _open (const char *file);///
 static int _filesize (int fd);
 static int _read (int fd, void *buffer, unsigned size);
-//static int _write (int fd, const void *buffer, unsigned size);
+//static int _write (int fd, const void *buffer, unsigned size);///
 static void _seek (int fd, unsigned position);
 static unsigned _tell (int fd);
 static void _close (int fd);
@@ -38,8 +38,8 @@ static bool is_user_fd (int fd);
 static bool _is_dir (int fd);
 static block_sector_t _inumber (int fd);
 static bool _chdir (const char *dir);
-//static bool _mkdir (const char *dir);
-//static bool _readdir (int fd, char *name);
+//static bool _mkdir (const char *dir);///
+//static bool _readdir (int fd, char *name);///
 
 /* static methods providing utility functions to above methods */
 
@@ -209,9 +209,9 @@ _exec (const char *cmd_line)
   sema_down (&t->process_info->sema_load);
 
   if (t->process_info->child_load_success)
-      return pid;
+    return pid;
   else
-      return -1;
+    return -1;
 }
 
 static int
