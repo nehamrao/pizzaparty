@@ -249,13 +249,9 @@ dir_remove (struct dir *dir, const char *name)
   if (inode_write_at (dir->inode, &e, sizeof e, ofs) != sizeof e) 
     goto done;
 
-
-  /* Remove inode. */
-  
   success = true;
 
  done:
-  inode_remove (inode);
   inode_close (inode);
   return success;
 }
