@@ -63,7 +63,7 @@ filesys_create (const char *name_, off_t initial_size)
   else
     dir = dir_reopen (t->current_dir);
   
- // lock_acquire (dir_getlock(dir));
+  lock_acquire (dir_getlock(dir));
 
   /* Parse the directory name, and recursively enter sub-directories */
   char *token1, *token2, *save_ptr;
@@ -75,20 +75,20 @@ filesys_create (const char *name_, off_t initial_size)
        token2 = strtok_r (NULL, "/", &save_ptr))
   {
     success = dir_lookup (dir, token1, &inode);
+    lock_release (dir_getlock(dir));
     dir_close (dir);
     if (!success) 
     {
-  //    lock_release (dir_getlock(dir));
       return false;     
     }
     dir = dir_open (inode);
- //   lock_acquire (dir_getlock(dir));
+    lock_acquire (dir_getlock(dir));
     token1 = token2;
   }
  
   if (strlen (token1) > NAME_MAX)
   {
-  //  lock_release (dir_getlock(dir));
+    lock_release (dir_getlock(dir));
     dir_close (dir);
     return false; 
   }
@@ -102,7 +102,7 @@ filesys_create (const char *name_, off_t initial_size)
   if (!success && inode_sector != 0) 
     free_map_release (inode_sector, 1);
   
- // lock_release (dir_getlock(dir));
+  lock_release (dir_getlock(dir));
   dir_close (dir); 
   free (name);
   return success;

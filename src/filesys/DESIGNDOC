@@ -43,7 +43,7 @@ We changed the structure of on-disk inode, which now looks like
     |    :     |    |    1     |
     |    :     |     ----------               ----------
      ----------     |    :     |             |    0     |
-    |    99    |  / |    :     |              ----------
+    |    122   |  / |    :     |              ----------
      ----------  //  ----------          === |    :     |
     |          | /  |    127   |       //    |    :     |
     | indirect |     ----------       //      ----------
@@ -63,13 +63,19 @@ We changed the structure of on-disk inode, which now looks like
                                               ----------
 
 Now each inode_disk strucutre can hold a file with maximum size of
-    512 * (100 + 128 + 128 * 128) = 8,505,344 Bytes ~ 8.11MB
+    512 * (122 + 128 + 128 * 128) = 8,516,608 Bytes ~ 8.12MB
 
 
 ---- SYNCHRONIZATION ----
 
 >> A3: Explain how your code avoids a race if two processes attempt to
 >> extend a file at the same time.
+
+We add a lock in inode structure preventing simultaneous expansion of the
+same file. When multiple process performs an expansion on a same file (also
+on the same inode structure), only one of them can proceed with the acquired
+lock.
+
 
 >> A4: Suppose processes A and B both have file F open, both
 >> positioned at end-of-file.  If A reads and B writes F at the same
@@ -78,12 +84,39 @@ Now each inode_disk strucutre can hold a file with maximum size of
 >> nonzero data, A is not allowed to see all zeros.  Explain how your
 >> code avoids this race.
 
+The majority of the logic determining whether or not an expasion is needed
+is done by byte_to_sector() and the expand_inode().
+
+When A and B both reach the end-of-file, A would compare the desired read
+position with the actual end-of-file, which may have been updated by a 
+write past previous end-of-file by B.
+
+In our code, the length of file is updated only after all allocation and
+actual writing of content has finished by B. This way, either A reaches
+the previous end-of-file before B updates the file length, and A would
+determine there is nothing to read, and return with no content read;
+or A may reach the previous end-of-file after B updates the file length,
+and by this time B have already allocated and written all contents
+and properly updated end-of-file, so A can safely ready the newly written
+contents. In both cases, A will either read nothing or read data B writes.
+
+
 >> A5: Explain how your synchronization design provides "fairness".
 >> File access is "fair" if readers cannot indefinitely block writers
 >> or vice versa.  That is, many processes reading from a file cannot
 >> prevent forever another process from writing the file, and many
 >> processes writing to a file cannot prevent another process forever
 >> from reading the file.
+
+/* TODO this paragraph seems not to be right */
+The main synchronization happens at buffer cache level. We implemented
+shared lock for each block in buffer cache, allowing multiple process to
+read together, while providing exclusive right to write on each block in
+buffer cache. However, we do not force an exclusive use of the entire file
+or inode strucutre, thus allowing multiple processes to access a file at
+the same time.
+/*  */
+
 
 ---- RATIONALE ----
 
@@ -121,19 +154,13 @@ but this is the rare case and the overall expected performance is still good.
 
 >> B2: Describe your code for traversing a user-specified path.  How
 >> do traversals of absolute and relative paths differ?
-To traverse a user-specified path, judgement is made using the first character
-of given path to decide whether it is a relative path or absolute one. An 
-absolute path starts with "/", and the directory is opened starting from root
-directory. For relative paths, process's current directory is used as the
-starting point. The sparse and open process of given path is performed the same
-ever after. 
 
 To traverse a user-specified path, judgement is made using the first character
 of given path to decide whether it is a relative path or absolute one. An 
 absolute path starts with "/", and the directory is opened starting from root
 directory. For relative paths, process's current directory is used as the
-starting point. The sparse and open process of given path is performed the same
-ever after.
+starting point. The parse and open process of given path is performed the same.
+
 
 ---- SYNCHRONIZATION ----
 
@@ -144,9 +171,10 @@ ever after.
 
 To prevent the race conditions on directory entries, we implement a lock in
 each inode for directory access. Since the directory's inode is the only 
-landmark differentiate it from other directories, a lock inside the inode 
+thing differentiating it from other directories, a lock inside the inode 
 could help us prevent multiple accesses to the same directory but allow 
 different directories to be opened or modified concurrently. 
+
 For instance, to avoid two simultaneous attempts to remove a single file, the
 working directory's lock inside its inode is acquired at the beginning of the
 remove process. In doing so, other remove calls working on a different 
@@ -166,7 +194,7 @@ interleave if synchronization is implemented on directory operation level,
 >> file system operations?  If not, how do you prevent it?
 
 In our design, we disallow a directory to be removed if it is opened or in use 
-by any process other than the "delete" process. 
+by any process other than the process performing "delete".
 
 This is because if we allow the directory to be deleted when other processses 
 still working on it, each time when a process needs to perform tasks on its 
@@ -205,6 +233,7 @@ its parent process, by reopen the parent process's directory. Another way to
 record current directory is to use a string pointer record the absolute path
 of the process's current directory. One major disadvantage is that, opening 
 a new file requires sequentially opens all the subdirectories every time. 
+
 Much of the time and space would enduced especially when the process's current
 directory becomes deep. We choose to use the first approach to avoid this 
 problem. By pointing to the current directory struct, open or create a new file
@@ -229,9 +258,11 @@ appropriate.
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+/**/
 Justify the reason we use a list to contain 64 buffer cache:
 we need to visit all buffer caches to determine a block to evict anyway,
 so a list is a reasonable choice to serve this aim.
+/**/
 
 
 ---- ALGORITHMS ----
@@ -258,11 +289,13 @@ the same block and prevent further writing operations; the other mode is
 acquire_exclusive, which one is used for cache writing or cache evitions. In 
 our design, any time before a cache becomes actively reading or writing, the
 integer inside the cache lock is added, and decreased when the lock is freed. 
+
 By doing so, we ensure that the integer inside lock is positive if any 
 process is using it. We implement our design of selecting victim by ensure 
 that the integer is not positive. In doing so, we ensured that the cache 
 block chosen as victim is not currently in reading or in writing. And that
 other processes would not evict an active data in the buffer cache block. 
+
 
 >> C6: During the eviction of a block from the cache, how are other
 >> processes prevented from attempting to access the block?
