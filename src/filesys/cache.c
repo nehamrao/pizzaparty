@@ -53,7 +53,7 @@ cache_get (block_sector_t sector_no)
 
   /* Look for SECTOR_NO sector in buffer cache, if not found, 
      pick the victim with the smallest time_stamp for eviction */
-  int i;
+  int i = -1;
   for (i = 0; i < 64; i++)
   {
     if (cache_block[i].sector_no == sector_no)	
@@ -68,6 +68,9 @@ cache_get (block_sector_t sector_no)
     if ( (cache_block[i].shared_lock.i == 0)
       && (cache_block[i].time_stamp < min_time_stamp) )
     {
+      if (victim != -1)
+        release_exclusive (&cache_block[victim].shared_lock);
+      acquire_exclusive (&cache_block[i].shared_lock);
       min_time_stamp = cache_block[i].time_stamp;
       victim = i;
     }
@@ -77,14 +80,14 @@ cache_get (block_sector_t sector_no)
   if (idx != -1)
   { 
 //    printf ("Found record %ld block\n", idx);///
+    if (victim != -1)
+      release_exclusive (&cache_block[victim].shared_lock);
     return &cache_block[idx];
   }
-
 
   /* Record not found, evict a victim cache block */
   if (victim != -1)
   {
-    acquire_exclusive (&cache_block[victim].shared_lock);
  //   printf ("Evict no: %ld\n", victim);///
     /* If dirty, write to disk before eviction */
     if (cache_block[victim].dirty)
@@ -100,27 +103,28 @@ cache_get (block_sector_t sector_no)
     release_exclusive (&cache_block[victim].shared_lock);
     return &cache_block[victim];
   }
-//    printf ("Cache busy!\n");   ///
+  PANIC ("Cache busy!\n");   ///
   return NULL;
 }
 
 /* Read LENGTH data from cache_block at OFS offset, to buffer DATA */
-void 
+bool 
 cache_read ( struct cache_block *cb, void *data, off_t ofs, int length)
 {
 // printf ("************** Cache READ!!!!!!!!!!!!!!!!!!!!!! %ld \n", cb->sector_no);///
-
+  bool enable_read_ahead = false;
   /* Allow multiple reader, so acquire lock in shared mode*/
   acquire_shared (&cb->shared_lock);
   if (!cb->present)
   {
-//    printf ("read %ld block from disk\n", cb->sector_no);///
+    enable_read_ahead = true;
     block_read (fs_device, cb->sector_no, cb->data);
     cb->present = true;
   }
-  memcpy ( data, cb->data + ofs, length);
-  /* Read ahead to be implemented here ****************////
+  if (data != NULL)
+    memcpy (data, cb->data + ofs, length);
   release_shared (&cb->shared_lock);
+  return enable_read_ahead;
 }
 
 /* Write LENGTH data to cache_block at OFS offset, from buffer DATA */
@@ -134,7 +138,6 @@ cache_write ( struct cache_block *cb, void *data, off_t ofs, int length)
   cb->present = true;
   memcpy (cb->data+ofs, data, length);
   release_exclusive (&cb->shared_lock);
-//  cache_flush (); /* To be removed *////
 }
 
 /* Flush cache, check the dirty bits of all cache buffer blocks,
@@ -148,8 +151,10 @@ cache_flush (void)
   {
     if (cache_block[i].dirty)
     {
+      acquire_exclusive (&cache_block[i].shared_lock);
       block_write (fs_device, cache_block[i].sector_no, cache_block[i].data);
       cache_block[i].dirty = false;
+      release_exclusive (&cache_block[i].shared_lock);
     }
   }
 }

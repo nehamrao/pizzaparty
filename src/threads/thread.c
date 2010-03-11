@@ -4,6 +4,7 @@
 #include <random.h>
 #include <stdio.h>
 #include <string.h>
+#include "devices/block.h"
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
@@ -12,6 +13,7 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
+#include "filesys/cache.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -95,6 +97,7 @@ thread_init (void)
   list_init (&ready_list);
   list_init (&all_list);
   lock_init (&glb_lock_filesys);
+  list_init (&read_ahead_list);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -114,6 +117,10 @@ thread_start (void)
   init_info (initial_thread, initial_thread->tid);
   sema_init (&idle_started, 0);
   thread_create ("idle", PRI_MIN, idle, &idle_started);
+
+  thread_create ("flush", PRI_DEFAULT, flush, NULL);
+
+  thread_create ("read_ahead", PRI_DEFAULT, read_ahead, NULL);
 
   /* Start preemptive thread scheduling. */
   intr_enable ();
@@ -430,6 +437,40 @@ idle (void *idle_started_ UNUSED)
     }
 }
 
+void 
+flush ()
+{
+  for (;;)
+  {
+    if (cache_initialized)
+      cache_flush ();
+    timer_sleep ((int64_t) 50);
+  }
+}
+
+void 
+read_ahead (void)
+{
+  struct read_struct *rs;
+  for (;;)
+  {
+    if (!list_empty (&read_ahead_list))
+    {
+      struct list_elem *e, *next;
+      for (e = list_begin (&read_ahead_list); e != list_end (&read_ahead_list);
+           e = next)
+      {
+        next = list_next (e);
+        rs = list_entry (e, struct read_struct, elem);
+        cache_read (cache_get (rs->sector), NULL, 0, BLOCK_SECTOR_SIZE);
+        list_remove (&rs->elem);
+        free (rs);
+      }
+    }
+    thread_yield ();
+  }
+}
+
 /* Function used as the basis for a kernel thread. */
 static void
 kernel_thread (thread_func *function, void *aux) 
@@ -483,20 +524,10 @@ init_thread (struct thread *t, const char *name, int priority, bool is_kernel)
   if (t != initial_thread)
     t->parent_thread = thread_current ();
 
-/*  if (t != initial_thread)
-  { 
-    if (thread_current ()-> current_dir != NULL)
-      t->current_dir = dir_reopen (thread_current ()->current_dir);
-    else 
-      t->current_dir = dir_open_root ();
-  }
-*/
   /* Initialize file arrays */
   memset (t->array_files, 0, sizeof *(t->array_files));
 
   /* Initialize current dir as parent's current dir */
-
-
   list_init (&t->child_list);
   t->executable = NULL;
 }

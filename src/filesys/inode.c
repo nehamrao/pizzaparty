@@ -3,6 +3,7 @@
 #include <debug.h>
 #include <round.h>
 #include <string.h>
+#include "threads/thread.h"
 #include "filesys/cache.h"
 #include "filesys/filesys.h"
 #include "filesys/free-map.h"
@@ -643,10 +644,12 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
   if (offset >= inode_length (inode))
     return 0;
 
+  int sector_idx = byte_to_sector (inode, offset, false);
+  int sector_idx_next;
   while (size > 0) 
     {
       /* Disk sector to read, starting byte offset within sector. */
-      block_sector_t sector_idx = byte_to_sector (inode, offset, false);
+      
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 
       if (sector_idx == -1)
@@ -664,6 +667,8 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
       if (chunk_size <= 0)
         break;
 
+      sector_idx_next = byte_to_sector (inode, offset + chunk_size, false);
+
       /* If read past current allocated blocks, fill the buffer with 0;
          otherwise read data from cache and write to buffer */
       if (sector_idx == -2)
@@ -672,14 +677,21 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
       } 
       else 
       {
-        cache_read (cache_get (sector_idx), buffer + bytes_read,
-                    sector_ofs, chunk_size);
+        bool enable_read_ahead = cache_read (cache_get (sector_idx), 
+                                 buffer + bytes_read, sector_ofs, chunk_size);
+        if ((sector_idx_next > 0) && (inode->sector > 1) && enable_read_ahead)
+        {
+           struct read_struct *rs = malloc (sizeof (struct read_struct));
+           rs->sector = sector_idx_next;
+           list_push_back (&read_ahead_list, &rs->elem);
+        }
       }
 
       /* Advance. */
       size -= chunk_size;
       offset += chunk_size;
       bytes_read += chunk_size;
+      sector_idx = sector_idx_next;
     }
 
   return bytes_read;
@@ -822,4 +834,5 @@ inode_getlock (struct inode *inode)
 {
   return &inode->dir_lock;
 }
+
 

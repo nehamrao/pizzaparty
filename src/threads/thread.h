@@ -140,6 +140,14 @@ struct process_info
 					   thread */
   };
 
+struct read_struct
+  {
+    struct list_elem elem;
+    unsigned sector;
+  };
+
+struct list read_ahead_list; 
+
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
@@ -176,4 +184,6 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
+void flush (void);
+void read_ahead (void);
 #endif /* threads/thread.h */
