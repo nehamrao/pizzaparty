@@ -251,6 +251,7 @@ dir_remove (struct dir *dir, const char *name)
   if (inode_write_at (dir->inode, &e, sizeof e, ofs) != sizeof e) 
     goto done;
 
+
   /* Finally we survived all possible failures
      and perform remove */
   inode_remove (inode);
