@@ -270,7 +270,28 @@ so a list is a reasonable choice to serve this aim.
 >> C2: Describe how your cache replacement algorithm chooses a cache
 >> block to evict.
 
+To choose a cache block to evict, we circle through cache block to search for
+a victim. A block could be chosen as victim only if it is not being currently
+worked on. To ensure fairness (every block has equal opportunity to be 
+evicted), we add a time stamp to record the existence time for each block. When
+a cache block is newly used, an intial time stamp is initialized and decreased
+in later circling search. To select out a victim, we would search through all 
+the cache blocks to find the one with minimized time stamp, namely the one 
+has been existing for the longest time. In doing so, not only race conditions
+are avoided, but fairness is also ensured during the eviction process.
+
+
 >> C3: Describe your implementation of write-behind.
+
+When the system wants to write some data to disk, it begins by only copying
+the data into buffer cache, and it is later that a background thread
+periodically call cache_flush() to actually write the data from buffer cache
+to disk.
+
+The background thread alternates between the two states all the time to
+periodically flush the cache: it would sleep for a certain amount of time,
+and then wake up and flush the cache.
+
 
 >> C4: Describe your implementation of read-ahead.
 
@@ -300,7 +321,7 @@ other processes would not evict an active data in the buffer cache block.
 >> C6: During the eviction of a block from the cache, how are other
 >> processes prevented from attempting to access the block?
 
-To assure that the victim block would not be further accessed by other block
+To ensure that the victim block would not be further accessed by other block
 during the process of eviction, we acquire the exclusive cache block right 
 after the victim is chosen. and release the lock until the cache block's 
 content is written back to disk. Since other activites such as writing or 
