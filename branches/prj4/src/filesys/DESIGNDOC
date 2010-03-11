@@ -33,6 +33,39 @@ Yinfeng Qin   <yinfeng@stanford.edu>
 >> A2: What is the maximum size of a file supported by your inode
 >> structure?  Show your work.
 
+We changed the structure of on-disk inode, which now looks like
+
+     ----------
+    |    0     |
+     ----------      ----------
+    |    1     |    |    0     |
+     ----------      ----------
+    |    :     |    |    1     |
+    |    :     |     ----------               ----------
+     ----------     |    :     |             |    0     |
+    |    99    |  / |    :     |              ----------
+     ----------  //  ----------          === |    :     |
+    |          | /  |    127   |       //    |    :     |
+    | indirect |     ----------       //      ----------
+    |  block   |                     //      |    127   |
+    |          |        ----------  //        ----------
+     ----------        |    0     | /
+    |          |        ----------    :
+    |  doubly  |       |    1     |
+    | indirect | =====  ----------    :
+    |  block   |       |    :     |           ----------
+    |          |       |    :     |   :      |    0     |
+     ----------         ----------            ----------
+                       |    127   | ======== |    :     |
+                        ----------           |    :     |
+                         indirect             ----------
+                          blocks             |    127   |
+                                              ----------
+
+Now each inode_disk strucutre can hold a file with maximum size of
+    512 * (100 + 128 + 128 * 128) = 8,505,344 Bytes ~ 8.11MB
+
+
 ---- SYNCHRONIZATION ----
 
 >> A3: Explain how your code avoids a race if two processes attempt to
@@ -60,6 +93,20 @@ Yinfeng Qin   <yinfeng@stanford.edu>
 >> structure, and what advantages and disadvantages does your
 >> structure have, compared to a multilevel index?
 
+Our inode strucutre is a multilevel index. We choose the combination of
+100 direct data blocks, together with 1 indirect block pointing to another
+128 data blocks, and 1 doubly indirect block pointing to yet another
+128 * 128 data blocks.
+
+This choice of combination works well in real-life situations where most
+files in a file system are small, while at the same time there are some
+really large files. With our design, for most small files no larger than
+100 blocks (51200 Bytes) in size, we can find their sector and perform
+I/O to disk data with two disk operations. When the files are really large,
+the system would have perform I/O to disk with three or four operations,
+but this is the rare case and the overall expected performance is still good.
+
+
 			    SUBDIRECTORIES
 			    ==============
 
@@ -81,6 +128,13 @@ directory. For relative paths, process's current directory is used as the
 starting point. The sparse and open process of given path is performed the same
 ever after. 
 
+To traverse a user-specified path, judgement is made using the first character
+of given path to decide whether it is a relative path or absolute one. An 
+absolute path starts with "/", and the directory is opened starting from root
+directory. For relative paths, process's current directory is used as the
+starting point. The sparse and open process of given path is performed the same
+ever after.
+
 ---- SYNCHRONIZATION ----
 
 >> B4: How do you prevent races on directory entries?  For example,
@@ -94,7 +148,6 @@ file is only allowed to be done sequentially on system call level. It is true
 that some of the parallerism may not be taken full advantage of in this case. 
 But considering the fact that remove and create an directory entry may 
 interleave if synchronization is implemented on directory operation level, 
- 
 
 
 >> B5: Does your implementation allow a directory to be removed if it
@@ -104,6 +157,7 @@ interleave if synchronization is implemented on directory operation level,
 
 In our design, we disallow a directory to be removed if it is opened or in use 
 by any process other than the "delete" process. 
+
 This is because if we allow the directory to be deleted when other processses 
 still working on it, each time when a process needs to perform tasks on its 
 current directory, it has to check whether its current directory is still valid
@@ -113,7 +167,8 @@ require extra overhead in synchroniztion if deletion is allowed, since a
 deletion could happen at any point when a process is openning or working on the
 directory. Efforts have to be made to prevent race conditions in this case.  We 
 believe that overall performance would be hampered if such deletion is allowed.
-This is why we disallow such deletion. 
+That is why we disallow such deletion. 
+
 To prevent the deletion of the opened directory, we added a function to check
 if the directory is opened by other processes or not. As the directory's 
 inode is always opened by the "delete" process for deletion, the inode's open
@@ -125,6 +180,7 @@ actually opens the directory when working or openning it. This is why we
 implement a directory struct pointer in each process pointing to the opened 
 directory. If a direcoty does not satisfy deletion requirments, the deletion 
 would be aborted.
+
 
 ---- RATIONALE ----
 
@@ -144,6 +200,7 @@ directory becomes deep. We choose to use the first approach to avoid this
 problem. By pointing to the current directory struct, open or create a new file
 in current directory does not need to open and search through all the 
 subdirectories from root. 
+
 Another advantage to use directory pointer pointed to actual directory struct
 is in the benefits of telling an directory's inode that it is currently being
 used. Whenever a subdirectory is pointed by the process, a dir_open call 
@@ -151,7 +208,6 @@ would be made, which is ensued by an inode_open of the directory's inode.
 In this way, it is easier to know if other processes are pointing at the 
 directory for the judgement of whether deletion of current process is 
 appropriate.
-
 
 
 			     BUFFER CACHE
@@ -162,6 +218,11 @@ appropriate.
 >> C1: Copy here the declaration of each new or changed `struct' or
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
+
+Justify the reason we use a list to contain 64 buffer cache:
+we need to visit all buffer caches to determine a block to evict anyway,
+so a list is a reasonable choice to serve this aim.
+
 
 ---- ALGORITHMS ----
 
@@ -185,6 +246,27 @@ appropriate.
 
 >> C7: Describe a file workload likely to benefit from buffer caching,
 >> and workloads likely to benefit from read-ahead and write-behind.
+
+One typical file workload that is likely to benefit from buffer caching
+is in our file growth procedure. This workload involves many read, update
+and write back to disk the indirect and doubly indirect inodes when there 
+is a huge growth. In this case, by caching the indirect and doubly indirect
+inodes, the performance would be significantly improved.
+
+A file workload that involved sequential read would benefit from read-ahead.
+For example, when memory-mapping a large file spanning many block sectors,
+by read-ahead, we would already have the following few blocks in cache after
+the first disk read, and this saves many disk reads for the following block
+reads.
+
+A file workload that involves interleaved computing and writing would benefit
+from write-behind. Without write-behind, the process would have to wait the 
+disk write to finish before continuing the computing, thus wasting many CPU
+cycles waiting for the disk write. With write-behind, the process can simply
+write the data to buffer cache and continue with the computing, and the actual
+write to disk would proceed in background when the CPU is relatively free. The
+performance under this kind of workload would benefit from write-behind.
+
 
 			   SURVEY QUESTIONS
 			   ================

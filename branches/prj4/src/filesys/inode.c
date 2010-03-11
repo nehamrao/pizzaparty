@@ -737,6 +737,8 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
               0, BLOCK_SECTOR_SIZE);
   meta_block->length = meta_block->length > offset + size ?
                        meta_block->length : offset + size;
+  meta_block->end = meta_block->end > offset + size - 1 ?
+                    meta_block->end : offset + size - 1;
   cache_write (cache_get (inode->sector), meta_block,
                0, BLOCK_SECTOR_SIZE);
 
