@@ -40,6 +40,8 @@ struct inode
     block_sector_t sector;              /* Sector number of disk location. */
     int open_cnt;                       /* Number of openers. */
     bool removed;                       /* True if deleted, false otherwise. */
+    struct lock dir_lock;               /* Lock to prevent race conditions in directory operations */
+    struct lock expand_lock;            /* Lock to prevent race conditions in inode expansion */
     int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */ 
   };
 
@@ -352,7 +354,9 @@ byte_to_sector (const struct inode *inode, off_t pos, bool enable_expand)
       if (enable_expand)
         {
           /* Expand inode */
+          lock_acquire (&inode->expand_lock);
           expand_inode (inode, pos);
+          lock_release (&inode->expand_lock);
 
           /* read updated metadata from disk */
           cache_read (cache_get (inode->sector), meta_block,
@@ -492,6 +496,8 @@ inode_open (block_sector_t sector)
 
   /* Initialize. */
   list_push_front (&open_inodes, &inode->elem);
+  lock_init (&inode->dir_lock);
+  lock_init (&inode->expand_lock);
   inode->sector = sector;
   inode->open_cnt = 1;
   inode->deny_write_cnt = 0;
@@ -809,5 +815,11 @@ int
 inode_isopen (const struct inode * inode)
 {
   return inode->open_cnt; 
+}
+
+struct lock * 
+inode_getlock (struct inode *inode)
+{
+  return &inode->dir_lock;
 }
 

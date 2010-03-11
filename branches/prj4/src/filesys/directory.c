@@ -7,6 +7,7 @@
 #include "threads/malloc.h"
 #include "filesys/cache.h"
 
+
 /* A directory. */
 struct dir 
   {
@@ -133,7 +134,6 @@ dir_lookup (const struct dir *dir, const char *name,
             struct inode **inode) 
 {
   struct dir_entry e;
-
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
    
@@ -141,7 +141,6 @@ dir_lookup (const struct dir *dir, const char *name,
     *inode = inode_open (e.inode_sector);
   else
     *inode = NULL;
-
   return *inode != NULL;
 }
 
@@ -158,14 +157,15 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
   bool success = false;
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
-
+  
+  
   /* Check NAME for validity. */
-  if (*name == '\0')
+  if (*name == '\0') 
     return false;
 
   /* Check that file does not already exist. */
   if (lookup (dir, name, NULL, NULL))
-  { 
+  {     
     goto done;
   }
 
@@ -189,6 +189,7 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
   success = inode_write_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
 
 done:
+ 
   return success; 
    
 }
@@ -206,7 +207,8 @@ dir_remove (struct dir *dir, const char *name)
 
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
-  
+  lock_acquire (inode_getlock(dir->inode));
+
   /* Protect root directory */
   if (strcmp (name, "/") == 0)
     goto done;
@@ -255,6 +257,7 @@ dir_remove (struct dir *dir, const char *name)
   success = true;
 
  done:
+  lock_release (inode_getlock (dir->inode));
   inode_close (inode);
   return success;
 }
@@ -265,8 +268,8 @@ dir_remove (struct dir *dir, const char *name)
 bool
 dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
 {
+  lock_acquire (inode_getlock (dir->inode));
   struct dir_entry e;
-
   while (inode_read_at (dir->inode, &e, sizeof e, dir->pos) == sizeof e) 
     {
       dir->pos += sizeof e;
@@ -275,8 +278,19 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
           strlcpy (name, e.name, NAME_MAX + 1);
           if (!strcmp (".", e.name) || !strcmp ("..", e.name))
             continue;
+          lock_release (inode_getlock (dir->inode));
           return true;
         } 
     }
+  lock_release (inode_getlock (dir->inode));
   return false;
 }
+
+struct lock *
+dir_getlock (struct dir *dir)
+{
+  return inode_getlock (dir->inode);
+}
+
+
+
