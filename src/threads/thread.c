@@ -14,7 +14,6 @@
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
 #include "filesys/cache.h"
-#include "filesys/filesys.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -439,6 +438,7 @@ idle (void *idle_started_ UNUSED)
     }
 }
 
+/* Thread to do write-behind. Periodically flush cache. */
 void 
 flush ()
 {
@@ -450,19 +450,17 @@ flush ()
   }
 }
 
+/* Thread to perform read_ahead */
 void 
 read_ahead (void)
 {
   struct read_struct *rs;
   for (;;)
   {
-    if (!filesys_initialized)
-    {
-      list_init (&read_ahead_list);
-      thread_yield ();
-      continue;
-    }
+    /* Lock to protect read_ahead_list */
     lock_acquire (&read_ahead_lock);
+
+    /* For all the elements in read_ahead_list, do the read-ahead */
     if (!list_empty (&read_ahead_list))
     {
       struct list_elem *e, *next;
@@ -471,12 +469,17 @@ read_ahead (void)
       {
         next = list_next (e);
         rs = list_entry (e, struct read_struct, elem);
+     
+        /* Read rs->sector from disk to buffer cache, if already 
+           in buffer cache, this function does nothing. */
         cache_read (cache_get (rs->sector), NULL, 0, BLOCK_SECTOR_SIZE);
         list_remove (&rs->elem);
         free (rs);
       }
     }
     lock_release (&read_ahead_lock);
+ 
+    /* Yield immediately after processing the read_ahead list */
     thread_yield ();
   }
 }
