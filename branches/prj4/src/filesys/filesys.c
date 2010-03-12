@@ -151,7 +151,8 @@ filesys_open_file (const char *name_)
   bool success = true;
 
   token1 = strtok_r (name, "/", &save_ptr);
-  for (token2 = strtok_r (NULL, "/", &save_ptr); token2 != NULL; token2 = strtok_r (NULL, "/", &save_ptr))
+  for (token2 = strtok_r (NULL, "/", &save_ptr); token2 != NULL;
+       token2 = strtok_r (NULL, "/", &save_ptr))
   {
     success = dir_lookup (dir, token1, &inode);
     dir_close (dir);
@@ -178,7 +179,8 @@ filesys_open_file (const char *name_)
      open it using function file_open () */
   off_t isdir = inode_isdir (inode);
 
-  struct file_info * f_info = (struct file_info *) malloc (sizeof (struct file_info));
+  struct file_info * f_info =
+    (struct file_info *) malloc (sizeof (struct file_info));
   if (isdir)
   {
     f_info->p_dir = dir_open (inode);
@@ -218,7 +220,8 @@ filesys_remove (const char *name_)
   char *token1, *token2, *save_ptr;  
   struct inode *inode = NULL;
   token1 = strtok_r (name, "/", &save_ptr);
-  for (token2 = strtok_r (NULL, "/", &save_ptr); token2 != NULL; token2 = strtok_r (NULL, "/", &save_ptr))
+  for (token2 = strtok_r (NULL, "/", &save_ptr); token2 != NULL;
+       token2 = strtok_r (NULL, "/", &save_ptr))
   {
     success = dir_lookup (dir, token1, &inode);   
     dir_close (dir);  
@@ -236,8 +239,7 @@ filesys_remove (const char *name_)
   free (name);
   return success;
 }
-
-  
+
 /* Formats the file system. */
 static void
 do_format (void)
@@ -249,3 +251,4 @@ do_format (void)
   free_map_close ();
   printf ("done.\n");
 }
+

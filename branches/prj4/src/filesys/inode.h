@@ -23,5 +23,4 @@ bool inode_isdir (const struct inode *);
 int inode_isopen (const struct inode * inode);
 struct lock * inode_getlock (struct inode *inode);
 
-
 #endif /* filesys/inode.h */

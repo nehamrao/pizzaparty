@@ -96,7 +96,6 @@ thread_init (void)
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
-  lock_init (&glb_lock_filesys);
   list_init (&read_ahead_list);
   lock_init (&read_ahead_lock);
 

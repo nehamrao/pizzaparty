@@ -104,9 +104,9 @@ struct thread
     struct file *executable;		/* Record current process's executable*/
     struct list child_list;		/* Record thread's children */
     struct process_info *process_info;  /* Process metadata */
-    struct dir *current_dir;
-  
 #endif
+
+    struct dir *current_dir;            /* Current directory of this process */
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
@@ -119,8 +119,6 @@ struct file_info
     struct file* p_file;                /* pointer to actual file structure */
     struct dir* p_dir;
   };
-/* global lock on function call to filesys.h and file.h */
-struct lock glb_lock_filesys;
 
 /* Metadata for process, which could be retrieved by parent process even
    after the process exits. */

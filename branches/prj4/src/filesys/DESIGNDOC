@@ -30,6 +30,36 @@ Yinfeng Qin   <yinfeng@stanford.edu>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+/* On-disk inode. Must be exactly BLOCK_SECTOR_SIZE bytes long. */
+struct inode_disk
+  {
+    off_t length;                       /* File size in bytes. */   
+    off_t end;                          /* End of the portion of file
+                                           actually written in bytes. */
+    bool isdir;				/* Directory indicator */
+    unsigned magic;                     /* Magic number. */
+
+    block_sector_t blocks[NUM_DBLOCK + 2];
+                                        /* Direct blocks and 2 more for 
+                                           single, double indirect blocks */
+    uint32_t unused[122 - NUM_DBLOCK];  /* Not used. */
+  };
+
+/* In-memory inode. */
+struct inode 
+  {
+    /* ... */
+
+    struct lock expand_lock;            /* Lock to prevent race conditions
+                                           in inode expansion */
+
+    /* We also removed the inode_disk member variable, and rely only on
+       disk sector number to find correponding on-disk inode */
+
+    /* ... */
+  };
+
+
 >> A2: What is the maximum size of a file supported by your inode
 >> structure?  Show your work.
 
@@ -74,7 +104,8 @@ Now each inode_disk strucutre can hold a file with maximum size of
 We add a lock in inode structure preventing simultaneous expansion of the
 same file. When multiple process performs an expansion on a same file (also
 on the same inode structure), only one of them can proceed with the acquired
-lock.
+lock. And following expansions would always check the actually file size to
+determine if further expasion is needed.
 
 
 >> A4: Suppose processes A and B both have file F open, both
@@ -97,8 +128,8 @@ the previous end-of-file before B updates the file length, and A would
 determine there is nothing to read, and return with no content read;
 or A may reach the previous end-of-file after B updates the file length,
 and by this time B have already allocated and written all contents
-and properly updated end-of-file, so A can safely ready the newly written
-contents. In both cases, A will either read nothing or read data B writes.
+and properly updated end-of-file, so A can safely read the newly written
+contents. In both cases, A will either read nothing or read what B writes.
 
 
 >> A5: Explain how your synchronization design provides "fairness".
@@ -108,14 +139,12 @@ contents. In both cases, A will either read nothing or read data B writes.
 >> processes writing to a file cannot prevent another process forever
 >> from reading the file.
 
-/* TODO this paragraph seems not to be right */
 The main synchronization happens at buffer cache level. We implemented
 shared lock for each block in buffer cache, allowing multiple process to
 read together, while providing exclusive right to write on each block in
 buffer cache. However, we do not force an exclusive use of the entire file
 or inode strucutre, thus allowing multiple processes to access a file at
 the same time.
-/*  */
 
 
 ---- RATIONALE ----
@@ -127,17 +156,19 @@ the same time.
 >> structure have, compared to a multilevel index?
 
 Our inode strucutre is a multilevel index. We choose the combination of
-100 direct data blocks, together with 1 indirect block pointing to another
+122 direct data blocks, together with 1 indirect block pointing to another
 128 data blocks, and 1 doubly indirect block pointing to yet another
-128 * 128 data blocks.
+128 * 128 data blocks. Here the 122 is the maximum possible number of
+direct blocks that a 512-byte sector can contain after all other relevant
+information.
 
 This choice of combination works well in real-life situations where most
 files in a file system are small, while at the same time there are some
 really large files. With our design, for most small files no larger than
-100 blocks (51200 Bytes) in size, we can find their sector and perform
-I/O to disk data with two disk operations. When the files are really large,
-the system would have perform I/O to disk with three or four operations,
-but this is the rare case and the overall expected performance is still good.
+122 blocks in size, we can find their sector and perform I/O to disk data
+with two disk operations. When the files are really large, the system would
+have perform I/O to disk with three or four operations, but this is the
+rare case and the overall expected performance is still good.
 
 
 			    SUBDIRECTORIES
@@ -149,17 +180,54 @@ but this is the rare case and the overall expected performance is still good.
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+/* On-disk inode. Must be exactly BLOCK_SECTOR_SIZE bytes long. */
+struct inode_disk
+  {
+    /* ... */
+
+    bool isdir;				/* Directory indicator */
+
+    /* ... */
+  };
+
+/* In-memory inode. */
+struct inode 
+  {
+    /* ... */
+
+    struct lock dir_lock;               /* Lock to prevent race conditions
+                                           in directory operations */
+
+    /* We also removed the inode_disk member variable, and rely only on
+       disk sector number to find correponding on-disk inode */
+
+    /* ... */
+  };
+
+struct thread
+  {
+    /* ... */
+
+    struct dir *current_dir;            /* Current directory of this process */
+
+    /* ... */
+  };
+
 
 ---- ALGORITHMS ----
 
 >> B2: Describe your code for traversing a user-specified path.  How
 >> do traversals of absolute and relative paths differ?
 
-To traverse a user-specified path, judgement is made using the first character
-of given path to decide whether it is a relative path or absolute one. An 
-absolute path starts with "/", and the directory is opened starting from root
-directory. For relative paths, process's current directory is used as the
-starting point. The parse and open process of given path is performed the same.
+To traverse a user-specified path, we use the first character of given path
+to decide whether it is a relative or absolute path. An absolute path starts
+with "/", and the directory is opened starting from root directory; while for
+relative paths, the process's current directory is used as the starting
+point.
+
+After choosing the starting point, we scan through the user-specified path.
+At each level we find and open the newly parsed path, and keep going until
+we run to the end, and arrive at the user-specified path.
 
 
 ---- SYNCHRONIZATION ----
@@ -169,23 +237,22 @@ starting point. The parse and open process of given path is performed the same.
 >> should succeed, as should only one of two simultaneous attempts to
 >> create a file with the same name, and so on.
 
-To prevent the race conditions on directory entries, we implement a lock in
-each inode for directory access. Since the directory's inode is the only 
-thing differentiating it from other directories, a lock inside the inode 
-could help us prevent multiple accesses to the same directory but allow 
-different directories to be opened or modified concurrently. 
+To prevent race condition on directory entries, we implemented a lock in
+each inode strucutre for directory access. Since the directory's inode is
+the only thing differentiating it from other directories, a lock inside the
+inode strucutre could help us prevent multiple accesses to the same directory
+but allow different directories to be opened or modified concurrently. 
 
 For instance, to avoid two simultaneous attempts to remove a single file, the
 working directory's lock inside its inode is acquired at the beginning of the
-remove process. In doing so, other remove calls working on a different 
+remove process. By doing so, other remove calls working on a different 
 directory could happen at the same time, while operations on one directory is 
 waiting for one another. The directory's lock is released until the end of 
-remove process, so that remove operation in the same directory could not simul. 
-to for file system operation. Each system call for modifying or creating a new
-file is only allowed to be done sequentially on system call level. It is true
-that some of the parallerism may not be taken full advantage of in this case. 
-But considering the fact that remove and create an directory entry may 
-interleave if synchronization is implemented on directory operation level, 
+remove process, so that remove operation in the same directory could not run
+simultaneously. Each system call for modifying or creating a new file in the
+same directory is only allowed to be done sequentially on system call level.
+Though we do not take advantage of full parallelism, our implementation avoids
+dangerous interleaves in the creation and deletion of directory entries.
 
 
 >> B5: Does your implementation allow a directory to be removed if it
@@ -193,29 +260,32 @@ interleave if synchronization is implemented on directory operation level,
 >> working directory?  If so, what happens to that process's future
 >> file system operations?  If not, how do you prevent it?
 
-In our design, we disallow a directory to be removed if it is opened or in use 
-by any process other than the process performing "delete".
+In our design, we disallow a directory to be removed right away if it is
+opened or being used by any process other than the one performing "delete".
+We just mark this directory as "to be removed", and only at the last "close"
+operation on the directory do we check the "to be removed" status, and
+perform the actual removal as indicated.
 
 This is because if we allow the directory to be deleted when other processses 
 still working on it, each time when a process needs to perform tasks on its 
-current directory, it has to check whether its current directory is still valid
-, as for that its current directory could be deleted by other processes without
+current directory, it has to check whether its current directory is still
+valid, since its current directory could be deleted by other processes without
 any notification. This would cause a lot of waste in checking. It would also 
 require extra overhead in synchroniztion if deletion is allowed, since a 
-deletion could happen at any point when a process is openning or working on the
-directory. Efforts have to be made to prevent race conditions in this case.  We 
-believe that overall performance would be hampered if such deletion is allowed.
-That is why we disallow such deletion. 
+deletion could happen at any point when a process is opening or working on the
+directory. Efforts have to be made to prevent race conditions in this case.
+We believe that overall performance would be hampered if such deletion is
+allowed, and this is why we disallow such deletion. 
 
 To prevent the deletion of the opened directory, we added a function to check
 if the directory is opened by other processes or not. As the directory's 
 inode is always opened by the "delete" process for deletion, the inode's open
 count would be larger than 2 if any other processes is working on it. Whenever
-a deletion is executed, the open count is compared to decide whether the 
+a deletion is executed, the open count is checked to decide whether the 
 directory satifies deletion requirements. The directory's inode open count 
-could be served as an effective judgement only if processes' working directory
+could serve as an effective judgement only if processes' working directory
 actually opens the directory when working or openning it. This is why we 
-implement a directory struct pointer in each process pointing to the opened 
+implement a directory struct pointer in each process pointing to the working
 directory. If a direcoty does not satisfy deletion requirments, the deletion 
 would be aborted.
 
@@ -227,26 +297,23 @@ would be aborted.
 
 We choose to represent the current directory of a process by using a directory
 pointer to point at current directory. Each time a "chdir" system call is 
-called, the old directory is closed and the directory pointer is pointed
+called, the previous directory is closed and the directory pointer is pointed
 to the new directory. A new process's current directory is inherited from
-its parent process, by reopen the parent process's directory. Another way to 
-record current directory is to use a string pointer record the absolute path
-of the process's current directory. One major disadvantage is that, opening 
-a new file requires sequentially opens all the subdirectories every time. 
+its parent process, by reopening the parent process's directory. Another way
+to record current directory is to use a string pointer to record the absolute
+path of the process's current directory. One major disadvantage is that
+every time opening a new file requires traversing the entire absolute path. 
 
-Much of the time and space would enduced especially when the process's current
-directory becomes deep. We choose to use the first approach to avoid this 
-problem. By pointing to the current directory struct, open or create a new file
-in current directory does not need to open and search through all the 
-subdirectories from root. 
+Our method saves time and space especially when the process's current
+directory is deep in the directory tree. By pointing to the current directory
+struct, opening or creating a new file in current directory does not need to
+open and search all the way from root. 
 
-Another advantage to use directory pointer pointed to actual directory struct
-is in the benefits of telling an directory's inode that it is currently being
-used. Whenever a subdirectory is pointed by the process, a dir_open call 
-would be made, which is ensued by an inode_open of the directory's inode. 
-In this way, it is easier to know if other processes are pointing at the 
-directory for the judgement of whether deletion of current process is 
-appropriate.
+Another advantage of our method is that it makes it easier to determine if a
+directory is being used by other processes. Whenever a directory is pointed
+by a process, a dir_open call would be made, followed by an inode_open of the
+directory's inode. This way it is easier to know if other processes are
+pointing to the directory, which helps in the deletion procedure.
 
 
 			     BUFFER CACHE
@@ -258,11 +325,44 @@ appropriate.
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
-/**/
-Justify the reason we use a list to contain 64 buffer cache:
-we need to visit all buffer caches to determine a block to evict anyway,
-so a list is a reasonable choice to serve this aim.
-/**/
+/* Shared lock that is used to protect cache read and write,
+   Multiple readers or at most one writer are allowed */
+struct shared_lock
+{
+  int i;
+  struct lock lock;
+  struct condition cond;
+};
+
+/* Cache metadata */
+struct cache_block
+{
+  block_sector_t sector_no;	 	/* Sector number that is cached */
+  bool dirty;				/* Dirty flag. If dirty when evicting,
+                                   	   write the data back to disk */
+  bool present;				/* Present bit */
+  unsigned int time_stamp;		/* Time stamp for evicting algorithm */
+  struct shared_lock shared_lock;       /* Shared lock for synchronization */
+  void *data;				/* Cache data */
+};
+
+/* All 64 buffer cache blocks */
+struct cache_block cache_block[64];
+
+/* A lock on the eviction process */
+struct lock evict_lock;
+
+/* Flag indicating whether cache is set up */
+bool cache_initialized = false;
+
+struct read_struct			/* Struct used for read_ahead list */
+  {
+    struct list_elem elem;              /* List element for read_ahead_list */
+    unsigned int sector;		/* Sector number */
+  };
+
+struct list read_ahead_list; 		/* Store all the read ahead request */
+struct lock read_ahead_lock;		/* Lock to protect read_ahead_list */
 
 
 ---- ALGORITHMS ----
@@ -270,15 +370,15 @@ so a list is a reasonable choice to serve this aim.
 >> C2: Describe how your cache replacement algorithm chooses a cache
 >> block to evict.
 
-To choose a cache block to evict, we circle through cache block to search for
-a victim. A block could be chosen as victim only if it is not being currently
-worked on. To ensure fairness (every block has equal opportunity to be 
-evicted), we add a time stamp to record the existence time for each block. When
+To choose a cache block to evict, we circle through cache blocks to find a
+victim. A block could be chosen as victim only if it is not being currently
+worked on. To ensure fairness (every block has equal opportunity to be
+evicted), we add a time stamp to record the life span for each block. When
 a cache block is newly used, an intial time stamp is initialized and decreased
-in later circling search. To select out a victim, we would search through all 
-the cache blocks to find the one with minimized time stamp, namely the one 
-has been existing for the longest time. In doing so, not only race conditions
-are avoided, but fairness is also ensured during the eviction process.
+in later circling search. To select a victim, we would search through all 
+the cache blocks to find the one with minimal time stamp, namely the one
+existing in the cache for the longest time. By doing so, not only are race
+conditions avoided, but fairness is also ensured during the eviction process.
 
 
 >> C3: Describe your implementation of write-behind.
@@ -289,11 +389,14 @@ periodically call cache_flush() to actually write the data from buffer cache
 to disk.
 
 The background thread alternates between the two states all the time to
-periodically flush the cache: it would sleep for a certain amount of time,
-and then wake up and flush the cache.
+periodically flush the cache: in one state it would sleep for a certain
+amount of time, and in another state it would wake up and flush the cache,
+writing the contents back to disk if a block's content is dirty.
 
 
 >> C4: Describe your implementation of read-ahead.
+
+
 
 ---- SYNCHRONIZATION ----
 
@@ -301,21 +404,17 @@ and then wake up and flush the cache.
 >> buffer cache block, how are other processes prevented from evicting
 >> that block?
 
-To prevent other processes from evicting a block that is currently under 
-writing or reading, we implement a cache lock for each of the cache block. 
-Different blocks share an independent lock so that concurrent operations
-on different cache blocks are guaranteed. In our design, the lock has two 
+To prevent other processes from evicting a block that is currently being 
+read or written, we implement a cache lock for each of the cache block. 
+Different blocks use independent lock so that concurrent operations
+on different cache blocks are allowed. In our design, the lock has two 
 modes: one is acquire_shared, which is used for multiple processes reading
 the same block and prevent further writing operations; the other mode is
-acquire_exclusive, which one is used for cache writing or cache evitions. In 
-our design, any time before a cache becomes actively reading or writing, the
-integer inside the cache lock is added, and decreased when the lock is freed. 
+acquire_exclusive, which is used for cache writing or cache evitions.
 
-By doing so, we ensure that the integer inside lock is positive if any 
-process is using it. We implement our design of selecting victim by ensure 
-that the integer is not positive. In doing so, we ensured that the cache 
-block chosen as victim is not currently in reading or in writing. And that
-other processes would not evict an active data in the buffer cache block. 
+We implemented the selection of victim by ensuring that the block selected
+is not currently being read or written. And other processes would not evict
+an active block in the buffer cache block. 
 
 
 >> C6: During the eviction of a block from the cache, how are other
@@ -325,7 +424,7 @@ To ensure that the victim block would not be further accessed by other block
 during the process of eviction, we acquire the exclusive cache block right 
 after the victim is chosen. and release the lock until the cache block's 
 content is written back to disk. Since other activites such as writing or 
-reading all requires to acquire the lock possessed by the eviction process,
+reading all requires to acquire the lock held by the eviction process,
 further access to the same block is prevented during eviction.
 
 
@@ -336,23 +435,24 @@ further access to the same block is prevented during eviction.
 
 One typical file workload that is likely to benefit from buffer caching
 is in our file growth procedure. This workload involves many read, update
-and write back to disk the indirect and doubly indirect inodes when there 
+and write back to disk on the indirect and doubly indirect inodes when there 
 is a huge growth. In this case, by caching the indirect and doubly indirect
 inodes, the performance would be significantly improved.
 
-A file workload that involved sequential read would benefit from read-ahead.
-For example, when memory-mapping a large file spanning many block sectors,
-by read-ahead, we would already have the following few blocks in cache after
-the first disk read, and this saves many disk reads for the following block
-reads.
+A file workload that involved sequential read and computing would benefit
+from read-ahead. For example, when loading a large file spanning many block
+sectors, with read-ahead, we may already have the following block in cache
+after loading the first block and performed some other operations. This saves
+many disk operations for the following block reads.
 
 A file workload that involves interleaved computing and writing would benefit
-from write-behind. Without write-behind, the process would have to wait the 
-disk write to finish before continuing the computing, thus wasting many CPU
-cycles waiting for the disk write. With write-behind, the process can simply
-write the data to buffer cache and continue with the computing, and the actual
-write to disk would proceed in background when the CPU is relatively free. The
-performance under this kind of workload would benefit from write-behind.
+from write-behind. Without write-behind, the process would have to wait for
+the disk write to complete before continuing the computing, thus wasting many
+CPU cycles waiting for the disk write. With write-behind, the process can
+write the data to buffer cache very quickly and proceed with the computing,
+and the actual writing to disk would continue in background when the CPU is
+relatively free. The overall performance under this kind of workload would
+benefit from write-behind.
 
 
 			   SURVEY QUESTIONS
