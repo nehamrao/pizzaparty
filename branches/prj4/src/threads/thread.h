@@ -143,10 +143,11 @@ struct process_info
 struct read_struct
   {
     struct list_elem elem;
-    unsigned sector;
+    unsigned int sector;
   };
 
 struct list read_ahead_list; 
+struct lock read_ahead_lock;
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.

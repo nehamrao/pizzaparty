@@ -14,6 +14,7 @@
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
 #include "filesys/cache.h"
+#include "filesys/filesys.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -98,6 +99,7 @@ thread_init (void)
   list_init (&all_list);
   lock_init (&glb_lock_filesys);
   list_init (&read_ahead_list);
+  lock_init (&read_ahead_lock);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -454,6 +456,13 @@ read_ahead (void)
   struct read_struct *rs;
   for (;;)
   {
+    if (!filesys_initialized)
+    {
+      list_init (&read_ahead_list);
+      thread_yield ();
+      continue;
+    }
+    lock_acquire (&read_ahead_lock);
     if (!list_empty (&read_ahead_list))
     {
       struct list_elem *e, *next;
@@ -467,6 +476,7 @@ read_ahead (void)
         free (rs);
       }
     }
+    lock_release (&read_ahead_lock);
     thread_yield ();
   }
 }
@@ -539,7 +549,6 @@ init_info (struct thread *t, tid_t tid)
   struct process_info *info = malloc (sizeof (struct process_info));
   if (info == NULL)
     thread_exit();
-
   /* Initialize members */
   sema_init (&info->sema_wait, 0);
   sema_init (&info->sema_load, 0);

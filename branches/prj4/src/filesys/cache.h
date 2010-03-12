@@ -27,7 +27,7 @@ struct cache_block
 
 void cache_init (void);
 struct cache_block *cache_get (block_sector_t sector_no);
-bool cache_read ( struct cache_block *cb, void *data, off_t ofs, int length);
+void cache_read ( struct cache_block *cb, void *data, off_t ofs, int length);
 void cache_write ( struct cache_block *cb, void *data, off_t ofs, int length);
 void acquire_shared (struct shared_lock *s);
 void acquire_exclusive (struct shared_lock *s);
