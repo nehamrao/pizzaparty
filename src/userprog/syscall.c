@@ -19,6 +19,7 @@
 static void syscall_handler (struct intr_frame *);
 
 /* static methods providing service to lib/user/syscall.h */
+
 static void _halt (void);
 static void _exit (int status);
 static pid_t _exec (const char *cmd_line);
@@ -34,13 +35,11 @@ static unsigned _tell (int fd);
 static void _close (int fd);
 static bool checkvaddr(const void * vaddr, unsigned size);
 static bool is_user_fd (int fd);
-
+static bool _mkdir (const char *dir);
+static bool _readdir (int fd, char *name);
 static bool _is_dir (int fd);
 static block_sector_t _inumber (int fd);
 static bool _chdir (const char *dir);
-
-static bool _mkdir (const char *dir);
-static bool _readdir (int fd, char *name);
 
 /* static methods providing utility functions to above methods */
 
@@ -429,9 +428,6 @@ _close (int fd)
   free (t->array_files[fd]);
   t->array_files[fd] = NULL;
 }
-
-
-
 
 static bool
 _is_dir (int fd)

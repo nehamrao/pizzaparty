@@ -7,8 +7,10 @@
 
 #define SECTOR_ERROR -1;
 
+/* All 64 buffer cache blocks */
 struct cache_block cache_block[64];
 
+/* A lock on the eviction process */
 struct lock evict_lock;
 
 /* Flag indicating whether cache is set up */
@@ -207,5 +209,4 @@ release_exclusive (struct shared_lock *s)
   cond_broadcast (&s->cond, &s->lock);
   lock_release (&s->lock);
 }
-
 

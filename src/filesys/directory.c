@@ -26,11 +26,13 @@ struct dir_entry
 /* Creates a directory with space for ENTRY_CNT entries in the
    given SECTOR.  Returns true if successful, false on failure. */
 bool
-dir_create (block_sector_t sector, block_sector_t parent_sector, size_t entry_cnt)
+dir_create (block_sector_t sector, block_sector_t parent_sector,
+            size_t entry_cnt)
 {
   if (inode_create (sector, entry_cnt * sizeof (struct dir_entry), true))
     {
       struct dir *dir = dir_open (inode_open (sector));
+
       /* Create "." and ".." directories in the new created directory */
       dir_add (dir, ".", sector);
       dir_add (dir, "..", parent_sector);
@@ -189,9 +191,7 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
   success = inode_write_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
 
 done:
- 
   return success; 
-   
 }
 
 /* Removes any entry for NAME in DIR.
@@ -252,8 +252,7 @@ dir_remove (struct dir *dir, const char *name)
     goto done;
 
 
-  /* Finally we survived all possible failures
-     and perform remove */
+  /* Finally we survived all possible failures and perform remove */
   inode_remove (inode);
   success = true;
 
@@ -292,6 +291,4 @@ dir_getlock (struct dir *dir)
 {
   return inode_getlock (dir->inode);
 }
-
-
 
