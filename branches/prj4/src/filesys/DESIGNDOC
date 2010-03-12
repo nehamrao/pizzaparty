@@ -385,17 +385,28 @@ conditions avoided, but fairness is also ensured during the eviction process.
 
 When the system wants to write some data to disk, it begins by only copying
 the data into buffer cache, and it is later that a background thread
-periodically call cache_flush() to actually write the data from buffer cache
+periodically calls cache_flush() to actually write the data from buffer cache
 to disk.
 
 The background thread alternates between the two states all the time to
-periodically flush the cache: in one state it would sleep for a certain
-amount of time, and in another state it would wake up and flush the cache,
-writing the contents back to disk if a block's content is dirty.
+flush the cache: it would periodically sleep for a certain amount of time,
+and then wake up and flush the cache.
+
 
 
 >> C4: Describe your implementation of read-ahead.
 
+The reading data from a file is done in inode_read_at () function. So each 
+time before a cache read request is issued, we use byte_to_sector () function
+to calculate sector number of the next block to read. If the number differs
+from the current one, then read-ahead needs to be performed. 
+
+In doing this, we set up a read_ahead_list to store all read-ahead requests, 
+and when a read-ahead is needed, we push that request in the list. Furthermore,
+we set up a new thread "read_ahead" in the background that executing a loop,
+processing all the request in read-ahead list and then yields immediately.
+With proper synchronization of the buffer cache described below in C5 and C6,
+read-ahead can be implement correctly without race conditions.
 
 
 ---- SYNCHRONIZATION ----
@@ -404,29 +415,71 @@ writing the contents back to disk if a block's content is dirty.
 >> buffer cache block, how are other processes prevented from evicting
 >> that block?
 
-To prevent other processes from evicting a block that is currently being 
-read or written, we implement a cache lock for each of the cache block. 
-Different blocks use independent lock so that concurrent operations
-on different cache blocks are allowed. In our design, the lock has two 
-modes: one is acquire_shared, which is used for multiple processes reading
-the same block and prevent further writing operations; the other mode is
-acquire_exclusive, which is used for cache writing or cache evitions.
+For synchronization in buffer cache, we use two different types of locks.
+One is a simple lock for eviction algorithm, which is used to prevent two
+threads to look for victim to evict simultaneously. Another kind of lock
+is shared lock for each of the buffer cache. It adopts the reader-writer
+shared lock model, and has exclusive mode and shared mode. Shared mode is 
+designed to allow multiple readers reading data from data cache to memory
+or to disk at the same time. For example, cache_flush () and reading data
+from buffer cache to memory use shared lock in shared mode. While exclusive
+mode is used when buffer cache data is modified by writer. For example, in 
+cache_read, in case of cache miss, the data is fetched from the disk to the 
+cache, or when data is written from memory to buffer cache in cache_write,
+shared lock is used in exclusive mode. Note that different buffer cache 
+blocks use independent lock so that concurrent operations on different cache 
+blocks are allowed.
 
-We implemented the selection of victim by ensuring that the block selected
-is not currently being read or written. And other processes would not evict
-an active block in the buffer cache block. 
+When a cache_read or cache_write request is issued, we use the eviction lock
+to protect the eviction process. After a cache hit or miss(and a victim block
+is selected in this case), we acquire the shared lock for that cache block in 
+exclusive mode. This is because no matter cache_read or cache_write, the first 
+possible operation, i.e. reading data from disk to buffer cache for cache_read,
+and writing data from memory to buffer cache for cache_write, does always 
+modify the content of buffer cache and thus has to be protected by shared lock
+in exclusive mode. But for cache read, after a possible fetch from disk, we 
+change the mode of the shared lock from exclusive mode to shared mode to allow
+multiple readers, because next operation for cache_read is to read data from 
+cache to memory. 
+
+Additionally, we disable interrupt in switching between eviction lock cache
+lock, and between cache lock in exclusive mode and cache lock in shared mode,
+in doing this, we prevent racing condition.
+
+Back to the question, when a process is writing or reading a buffer cache 
+block, it acquires the lock, so other process wanting to evict the buffer 
+cache must acquire a shared mode to write the cache block data to disk.
+So for writing buffer cache, this cannot be done because writing buffer
+cache needs the lock in exclusive mode; but for reading the buffer cache, 
+the buffer cache can be actually being "evicted". By "evicted" I mean 
+writing data from buffer to disk, without actually modifying the data, 
+the unchanged data is guaranteed by the shared mode cache lock held by the
+thread reading buffer cache. In this case, you can see that our design makes
+room for maximum degree of parallelism while ensuring correctness.
 
 
 >> C6: During the eviction of a block from the cache, how are other
 >> processes prevented from attempting to access the block?
 
-To ensure that the victim block would not be further accessed by other block
-during the process of eviction, we acquire the exclusive cache block right 
-after the victim is chosen. and release the lock until the cache block's 
-content is written back to disk. Since other activites such as writing or 
-reading all requires to acquire the lock held by the eviction process,
-further access to the same block is prevented during eviction.
+This is very similar to C5. In evicting a block from the cache, the threads
+holds a shared mode lock for that cache. So accessing the block by other 
+threads is permitted if in a shared mode, and denied if in a exclusive mode.
 
+For example, a thread reading cache data from cache to memory after a cache
+hit is allowed, and a thread writing data to that cache or binging data 
+from disk to that cache is not allowed. You may want to know what happened 
+if the cache is evicted before another thread finishes reading data from 
+cache to memory after a cache hit. Actually this is impossible to happen.
+Evicting a cache block consists of two steps, firstly writing the cache data 
+to disk and then fetching new data to the cache. During the first step,
+another thread reading data from that cache is allowed; and before this 
+thread finishes reading, the original thread cannot enter the second step 
+of eviction, because the lock in the exclusive mode is required. As a result, 
+it waits until the second thread finishes its work and releases the lock
+in the shared mode. If now no other thread is reading the cache, the original
+thread can acquire the lock in exclusive mode and finishes evicting the cache
+block. So in this case, you can see that our design makes room for maximum 
+degree of parallelism while ensuring correctness.
 
 ---- RATIONALE ----
 
