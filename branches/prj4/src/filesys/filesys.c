@@ -11,7 +11,6 @@
 
 /* Partition that contains the file system. */
 struct block *fs_device;
-bool filesys_initialized = false;
 
 static void do_format (void);
 
@@ -31,7 +30,6 @@ filesys_init (bool format)
     do_format ();
 
   free_map_open ();
-  filesys_initialized = true;
 }
 
 /* Shuts down the file system module, writing any unwritten data
@@ -42,7 +40,6 @@ filesys_done (void)
   free_map_close ();
   cache_flush ();
   cache_initialized = false;
-  filesys_initialized = false;
 }
 
 /* Creates a file named NAME with the given INITIAL_SIZE.

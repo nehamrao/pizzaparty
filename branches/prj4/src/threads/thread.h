@@ -140,14 +140,14 @@ struct process_info
 					   thread */
   };
 
-struct read_struct
+struct read_struct			/* Struct used for read_ahead list */
   {
-    struct list_elem elem;
-    unsigned int sector;
+    struct list_elem elem;              /* List element for read_ahead_list */
+    unsigned int sector;		/* Sector number */
   };
 
-struct list read_ahead_list; 
-struct lock read_ahead_lock;
+struct list read_ahead_list; 		/* Store all the read ahead request */
+struct lock read_ahead_lock;		/* Lock to protect read_ahead_list */
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
@@ -185,6 +185,7 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
+/* Daemon thread functions */
 void flush (void);
 void read_ahead (void);
 #endif /* threads/thread.h */
