@@ -11,6 +11,8 @@
 /* Block device that contains the file system. */
 struct block *fs_device;
 
+extern bool filesys_initialized;
+
 void filesys_init (bool format);
 void filesys_done (void);
 bool filesys_create (const char *name_, off_t initial_size);

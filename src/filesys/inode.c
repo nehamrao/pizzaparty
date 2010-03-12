@@ -677,14 +677,16 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
       } 
       else 
       {
-        bool enable_read_ahead = cache_read (cache_get (sector_idx), 
-                                 buffer + bytes_read, sector_ofs, chunk_size);
-        if ((sector_idx_next > 0) && (inode->sector > 1) && enable_read_ahead)
+        if (sector_idx_next > 0 && sector_idx_next != sector_idx)
         {
            struct read_struct *rs = malloc (sizeof (struct read_struct));
            rs->sector = sector_idx_next;
+           lock_acquire (&read_ahead_lock);
            list_push_back (&read_ahead_list, &rs->elem);
+           lock_release (&read_ahead_lock);
         }
+        cache_read (cache_get (sector_idx), buffer + bytes_read, 
+                    sector_ofs, chunk_size);
       }
 
       /* Advance. */
