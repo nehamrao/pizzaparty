@@ -44,7 +44,7 @@ cache_init ()
     lock_init (&cache_block[i].shared_lock.lock);
     cond_init (&cache_block[i].shared_lock.cond);
   }
-  lock_init (&evict_lock);///
+  lock_init (&evict_lock);
   cache_initialized = true;
   return;
 }
@@ -55,33 +55,36 @@ cache_get (block_sector_t sector_no)
 {
   int idx = -1;
   int victim = -1, retval = -1;
+  int i;
   uint32_t min_time_stamp = 1 << 31;
 
   /* Look for SECTOR_NO sector in buffer cache, if not found, 
      pick the victim with the smallest time_stamp for eviction */
 
+  /* Lock for eviction algorithm */
   lock_acquire (&evict_lock);
-  int i = -1;
-  for (i = 0; i < 64; i++)
-    if (cache_block[i].time_stamp)
-      cache_block[i].time_stamp --;
 
   for (i = 0; i < 64; i++)
   {
-    if (cache_block[i].sector_no == sector_no)	
+    if (cache_block[i].sector_no == sector_no)	/* Found entry in cache */
     {
       idx = i;
       cache_block[i].time_stamp = (1 << 30);
       break;
-    }
+    } else 
+    if (cache_block[i].time_stamp)
+        cache_block[i].time_stamp --;
 
+    /* Choose the LRU block for eviction, and be careful not to 
+       choose those block while reading or writing */
     if ( (cache_block[i].shared_lock.i == 0)
-      && (cache_block[i].time_stamp < min_time_stamp) )
+      && (cache_block[i].time_stamp < min_time_stamp) ) 
     {
       min_time_stamp = cache_block[i].time_stamp;
       victim = i;
     }
   }
+
   /* Record found in cache buffer */
   if (idx != -1)
   { 
@@ -94,9 +97,11 @@ cache_get (block_sector_t sector_no)
       /* If dirty, write to disk before eviction */
       if (cache_block[victim].dirty)
       {
+        acquire_shared (&cache_block[victim].shared_lock);
         block_write (fs_device, cache_block[victim].sector_no, 
                      cache_block[victim].data);
         cache_block[victim].dirty = false;
+        release_shared (&cache_block[victim].shared_lock);
       }
       cache_block[victim].sector_no = sector_no;
       cache_block[victim].present = false;
@@ -105,11 +110,13 @@ cache_get (block_sector_t sector_no)
     }
   
   enum intr_level old_level = intr_disable ();
-  lock_release (&evict_lock);
 
+  /* Release the eviction lock, and acquire shared lock in exclusive mode */
+  lock_release (&evict_lock);
   acquire_exclusive (&cache_block[retval].shared_lock);
   intr_set_level (old_level);
 
+  /* Return the cache block entry */
   return &cache_block[retval];
 }
 
@@ -117,18 +124,22 @@ cache_get (block_sector_t sector_no)
 void
 cache_read ( struct cache_block *cb, void *data, off_t ofs, int length)
 {
-  /* Allow multiple reader, so acquire lock in shared mode*/
+  /* If present bit not set, read corresponding data from disk. Note that now 
+     this cache block is protected by share_lock in exclusive mode */
   if (!cb->present)
   {
     block_read (fs_device, cb->sector_no, cb->data);
     cb->present = true;
   }
 
+  /* Before copying data from cache to memory, change the lock to shared mode
+     to allow parallelism */
   enum intr_level old_level = intr_disable ();
   release_exclusive (&cb->shared_lock);
   acquire_shared (&cb->shared_lock);
   intr_set_level (old_level);
 
+  /* Copy the data from cache to memory */
   if (data != NULL)
     memcpy (data, cb->data + ofs, length);
   release_shared (&cb->shared_lock);
@@ -153,6 +164,8 @@ cache_flush (void)
   int i;
   for (i = 0; i < 64; i++)
   {
+    /* Flushing cache does not change the content in cache, so use lock 
+       in shared mode */
     acquire_shared (&cache_block[i].shared_lock);
     if (cache_block[i].dirty)
     {

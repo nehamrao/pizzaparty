@@ -693,6 +693,8 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
       } 
       else 
       {
+        /* If next sector number is valid and is different from current one
+           perform read-ahead by adding the sector number in read ahead list */
         if (sector_idx_next > 0 && sector_idx_next != sector_idx)
         {
            struct read_struct *rs = malloc (sizeof (struct read_struct));
